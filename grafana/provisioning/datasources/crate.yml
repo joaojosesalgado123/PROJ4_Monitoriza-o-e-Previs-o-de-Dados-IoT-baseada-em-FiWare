@@ -3,6 +3,7 @@ apiVersion: 1
 datasources:
   - name: CrateDB
     type: postgres
+    uid: c4eebee0-e0a1-4048-860e-371c4a25d8d2
     url: crate:5432
     database: doc
     user: crate

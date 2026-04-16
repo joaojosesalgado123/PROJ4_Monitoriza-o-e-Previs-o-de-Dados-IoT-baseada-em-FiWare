@@ -79,11 +79,11 @@ def simulate_reading(machine: dict) -> dict:
     # Energia consumida neste ciclo (com variação 15%)
     delta_energy = machine["base_energy"] * random.uniform(0.85, 1.15)
 
-    # Fio consumido neste ciclo 
+    # Fio consumido neste ciclo (proporcional à energia)
     thread_consumed = random.uniform(18, 35)
     state["thread_remaining"] = max(0, state["thread_remaining"] - thread_consumed)
 
-    # Repor fio quando ficar baixo 
+    # Repor fio quando ficar baixo (reabastecimento)
     if state["thread_remaining"] < 100:
         log.info(f"[{machine['name']}] Reabastecimento de fio.")
         state["thread_remaining"] = machine["base_thread"] * random.uniform(0.9, 1.0)
@@ -199,7 +199,8 @@ def send_reading(machine: dict):
 
 def setup_subscription():
     """
-    Cria uma subscrição no Orion para que o QuantumLeap receba automaticamente todas as atualizações das máquinas têxteis.
+    Cria uma subscrição no Orion para que o QuantumLeap receba
+    automaticamente todas as atualizações das máquinas têxteis.
     """
     url = f"{ORION_URL}/v2/subscriptions"
 
