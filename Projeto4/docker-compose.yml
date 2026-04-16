@@ -1,0 +1,115 @@
+services:
+
+  # --- MongoDB (necessário para o Orion) ---
+  mongo:
+    image: mongo:6.0
+    container_name: mongo
+    restart: unless-stopped
+    command: --nojournal
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - fiware
+
+  # --- Orion Context Broker ---
+  orion:
+    image: fiware/orion:3.10.1
+    container_name: orion
+    hostname: orion
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "1026:1026"
+    command: -dbhost mongo -logLevel DEBUG -noCache
+    networks:
+      - fiware
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1026/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # --- QuantumLeap ---
+  quantumleap:
+    image: orchestracities/quantumleap:latest
+    container_name: quantumleap
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      - crate
+      - orion
+    ports:
+      - "8668:8668"
+    environment:
+      - CRATE_HOST=crate
+      - CRATE_PORT=4200
+      - LOGLEVEL=DEBUG
+    networks:
+      - fiware
+
+  # --- CrateDB (bd timeseries) ---
+  crate:
+    image: crate:5.4.5
+    container_name: crate
+    restart: unless-stopped
+    ports:
+      - "4200:4200"
+      - "6000:5432"
+    environment:
+      - CRATE_HEAP_SIZE=1g
+    command:
+      - crate
+      - -Cnetwork.host=_site_
+      - -Cdiscovery.type=single-node
+    volumes:
+      - crate_data:/data
+    networks:
+      - fiware
+
+  # --- Grafana ---
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: grafana
+    restart: unless-stopped
+    depends_on:
+      - crate
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - fiware
+
+  # --- Agente IoT ---
+  iot-agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: iot-agent
+    restart: unless-stopped
+    depends_on:
+      orion:
+        condition: service_healthy
+    environment:
+      - ORION_HOST=orion
+      - ORION_PORT=1026
+      - SEND_INTERVAL=30
+    networks:
+      - fiware
+
+volumes:
+  mongo_data:
+  crate_data:
+  grafana_data:
+
+networks:
+  fiware:
+    driver: bridge
