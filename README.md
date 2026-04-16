@@ -1,0 +1,1 @@
+# PROJ4_Monitoriza-o-e-Previs-o-de-Dados-IoT-baseada-em-FiWare
