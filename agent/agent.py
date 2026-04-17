@@ -32,18 +32,21 @@ MACHINES = [
     {
         "id": "urn:ngsi-ld:TextileMachine:001",
         "name": "Máquina A",
+        "type": "Fiação",
         "base_energy": 5.2,    
         "base_thread": 800.0,  
     },
     {
         "id": "urn:ngsi-ld:TextileMachine:002",
         "name": "Máquina B",
+        "type": "Tecelagem",
         "base_energy": 4.8,
         "base_thread": 950.0,
     },
     {
         "id": "urn:ngsi-ld:TextileMachine:003",
         "name": "Máquina C",
+        "type": "Tingimento",
         "base_energy": 6.1,
         "base_thread": 750.0,
     },
@@ -129,6 +132,10 @@ def create_entity(machine: dict, reading: dict):
             "type":  "Text",
             "value": machine["name"],
         },
+        "machineType": {
+            "type": "Text",
+            "value": machine["type"],
+        },
         "energy_consumed": {
             "type":  "Number",
             "value": reading["energy_consumed"],
@@ -171,6 +178,7 @@ def update_entity(machine: dict, reading: dict):
         "error_code":       {"type": "Integer",  "value": reading["error_code"]},
         "status":           {"type": "Text",     "value": reading["status"]},
         "timestamp":        {"type": "DateTime", "value": reading["timestamp"]},
+        "machineType":      {"type": "Text", "value": machine["type"]},
     }
     r = requests.patch(url, json=body, headers=HEADERS, timeout=5)
     if r.status_code == 204:
@@ -215,12 +223,12 @@ def setup_subscription():
         "subject": {
             "entities": [{"idPattern": ".*", "type": "TextileMachine"}],
             "condition": {
-                "attrs": ["energy_consumed", "thread_remaining", "error_code", "status"]
+                "attrs": ["energy_consumed", "thread_remaining", "error_code", "status", "machineType"]
             },
         },
         "notification": {
             "http": {"url": "http://quantumleap:8668/v2/notify"},
-            "attrs": ["energy_consumed", "thread_remaining", "error_code", "status", "timestamp"],
+            "attrs": ["energy_consumed", "thread_remaining", "error_code", "status", "timestamp", "machineType"],
             "metadata": ["dateCreated", "dateModified"],
         },
         "throttling": 0,
