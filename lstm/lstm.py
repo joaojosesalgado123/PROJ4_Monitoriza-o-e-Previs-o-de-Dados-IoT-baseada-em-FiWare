@@ -1,22 +1,22 @@
+import time
+import os
 import numpy as np
 import pandas as pd
-import requests
-from crate import client  
+from crate import client
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout, Input
 
-
 # CONFIGURAÇÕES
-
-CRATE_HOST = "localhost:4200"               
-SCHEMA_TABLE = "mttextile.ettextilemachine"   
+CRATE_HOST = os.getenv("CRATE_HOST", "crate:4200")
+SCHEMA_TABLE = "mttextile.ettextilemachine"
 MACHINE_IDS = [
     "urn:ngsi-ld:TextileMachine:001",
     "urn:ngsi-ld:TextileMachine:002",
     "urn:ngsi-ld:TextileMachine:003"
 ]
-WINDOW_SIZE = 60 # 60 leituras / ultimos 30 minutos
+WINDOW_SIZE = 60
+RUN_INTERVAL = int(os.getenv("RUN_INTERVAL", "300"))  # corre a cada 5 minutos
 
 
 # EXTRAÇÃO DE DADOS (CRATEDB)
@@ -24,40 +24,38 @@ WINDOW_SIZE = 60 # 60 leituras / ultimos 30 minutos
 def fetch_data(machine_id):
     print(f"\n--- A ligar ao CrateDB e extrair histórico da {machine_id} ---")
     conn = client.connect([CRATE_HOST])
-    
+
     query = f"""
-        SELECT time_index, energy_consumed, thread_remaining, error_code 
+        SELECT time_index, energy_consumed, thread_remaining, error_code
         FROM {SCHEMA_TABLE}
-        WHERE entity_id = '{machine_id}' 
+        WHERE entity_id = '{machine_id}'
         ORDER BY time_index ASC
     """
     df = pd.read_sql(query, conn)
     conn.close()
-    
-    # Preencher falhas caso existam
+
     df = df.ffill()
     return df
 
 
-
-# PREPARAÇÃO DOS DADOS 
+# PREPARAÇÃO DOS DADOS
 
 def prepare_data(df):
     print("A normalizar e preparar janelas de tempo...")
     features = ['energy_consumed', 'thread_remaining', 'error_code']
     data = df[features].values
-    
+
     energy_scaler = MinMaxScaler(feature_range=(0, 1))
     energy_scaler.fit(df[['energy_consumed']])
-    
+
     scaler = MinMaxScaler(feature_range=(0, 1))
     data_scaled = scaler.fit_transform(data)
-    
+
     X, y = [], []
     for i in range(WINDOW_SIZE, len(data_scaled)):
         X.append(data_scaled[i-WINDOW_SIZE:i, :])
-        y.append(data_scaled[i, 0]) 
-        
+        y.append(data_scaled[i, 0])
+
     return np.array(X), np.array(y), scaler, energy_scaler, data_scaled
 
 
@@ -66,53 +64,70 @@ def prepare_data(df):
 def build_and_train_model(X, y):
     print(f"A treinar modelo LSTM com {len(X)} amostras...")
     model = Sequential()
-    
-    # Entrada
+
     model.add(Input(shape=(X.shape[1], X.shape[2])))
-    
-    # LSTM
     model.add(LSTM(units=50, return_sequences=False))
-    model.add(Dropout(0.2)) 
-    
-    # 1 previsão
+    model.add(Dropout(0.2))
     model.add(Dense(units=1))
-    
+
     model.compile(optimizer='adam', loss='mean_squared_error')
-    
-    # Treino
     model.fit(X, y, epochs=20, batch_size=32, validation_split=0.2, verbose=1)
     return model
 
 
-# PREVISÃO DO FUTURO E ENVIO
+# PREVISÃO DO FUTURO
 
 def predict_future(model, data_scaled, energy_scaler, machine_id):
-    # últimas 60 leituras
     last_window = np.array([data_scaled[-WINDOW_SIZE:]])
-    
-    # previsão (escala 0 a 1)
     predicted_val_scaled = model.predict(last_window)
-    
-    # Reverter kWh normais 
     predicted_energy = float(energy_scaler.inverse_transform(predicted_val_scaled)[0][0])
-    
+
     print("\n" + "="*60)
-    print(f"PREVISÃO DA INTELIGÊNCIA ARTIFICIAL: {machine_id}")
-    print(f"Com base nos últimos 30 minutos, o consumo previsto")
-    print(f"para o próximo ciclo é: {predicted_energy:.2f} kWh")
+    print(f"PREVISÃO: {machine_id}")
+    print(f"Consumo previsto para o próximo ciclo: {predicted_energy:.2f} kWh")
     print("="*60 + "\n")
 
 
-# EXECUÇÃO PRINCIPAL
+# LOOP PRINCIPAL
 
-if __name__ == "__main__":
+def run_cycle():
+    print("\n========== NOVO CICLO LSTM ==========")
     for machine in MACHINE_IDS:
         df = fetch_data(machine)
-        
+
         if len(df) < WINDOW_SIZE + 10:
-            print(f"Aviso: Faltam dados reais na {machine}. Deixa o 'agent.py' correr mais tempo!")
+            print(f"[{machine}] Dados insuficientes ({len(df)} leituras). Mínimo necessário: {WINDOW_SIZE + 10}. A aguardar mais dados...")
         else:
             X, y, scaler, energy_scaler, data_scaled = prepare_data(df)
             model = build_and_train_model(X, y)
             predict_future(model, data_scaled, energy_scaler, machine)
-            print(f" Processo concluído para a {machine}.\n")
+            print(f"Processo concluído para {machine}.\n")
+
+
+def wait_for_crate(retries=20, delay=10):
+    """Aguarda o CrateDB estar disponível."""
+    import requests
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.get(f"http://{CRATE_HOST}", timeout=5)
+            if r.status_code == 200:
+                print("CrateDB disponível.")
+                return
+        except Exception:
+            pass
+        print(f"A aguardar CrateDB... ({attempt}/{retries})")
+        time.sleep(delay)
+    raise RuntimeError("CrateDB não ficou disponível a tempo.")
+
+
+if __name__ == "__main__":
+    print("LSTM Service a iniciar...")
+    wait_for_crate()
+
+    while True:
+        try:
+            run_cycle()
+        except Exception as e:
+            print(f"Erro no ciclo LSTM: {e}")
+        print(f"Próximo ciclo em {RUN_INTERVAL} segundos...")
+        time.sleep(RUN_INTERVAL)

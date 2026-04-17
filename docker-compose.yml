@@ -106,6 +106,21 @@ services:
     networks:
       - fiware
 
+# --- LSTM ---
+  lstm:
+    build:
+      context: ./lstm
+      dockerfile: Dockerfile
+    container_name: lstm
+    restart: unless-stopped
+    depends_on:
+      - crate
+    environment:
+      - CRATE_HOST=crate:4200
+      - RUN_INTERVAL=300
+    networks:
+      - fiware
+
 volumes:
   mongo_data:
   crate_data:
