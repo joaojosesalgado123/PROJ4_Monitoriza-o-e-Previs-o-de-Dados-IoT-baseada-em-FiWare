@@ -1,11 +1,19 @@
-import time
 import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+import warnings
+warnings.filterwarnings('ignore')
+
+import time
 import numpy as np
 import pandas as pd
 from crate import client
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout, Input
+from sqlalchemy import create_engine
+import tensorflow as tf
+
+tf.config.optimizer.set_experimental_options({'disable_meta_optimizer': True})
 
 # CONFIGURAÇÕES
 CRATE_HOST = os.getenv("CRATE_HOST", "crate:4200")
@@ -23,16 +31,16 @@ RUN_INTERVAL = int(os.getenv("RUN_INTERVAL", "300"))  # corre a cada 5 minutos
 
 def fetch_data(machine_id):
     print(f"\n--- A ligar ao CrateDB e extrair histórico da {machine_id} ---")
-    conn = client.connect([CRATE_HOST])
-
+    engine = create_engine(f"crate://{CRATE_HOST}")
+    
     query = f"""
         SELECT time_index, energy_consumed, thread_remaining, error_code, machinetype
         FROM {SCHEMA_TABLE}
         WHERE entity_id = '{machine_id}'
         ORDER BY time_index ASC
     """
-    df = pd.read_sql(query, conn)
-    conn.close()
+    df = pd.read_sql(query, engine)
+    engine.dispose()
 
     df = df.ffill()
     return df
