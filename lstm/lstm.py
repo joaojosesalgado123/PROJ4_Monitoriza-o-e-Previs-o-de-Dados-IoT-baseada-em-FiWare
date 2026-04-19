@@ -26,7 +26,7 @@ def fetch_data(machine_id):
     conn = client.connect([CRATE_HOST])
 
     query = f"""
-        SELECT time_index, energy_consumed, thread_remaining, error_code
+        SELECT time_index, energy_consumed, thread_remaining, error_code, machinetype
         FROM {SCHEMA_TABLE}
         WHERE entity_id = '{machine_id}'
         ORDER BY time_index ASC
@@ -77,7 +77,7 @@ def build_and_train_model(X, y):
 
 # PREVISÃO DO FUTURO
 
-def predict_future(model, data_scaled, energy_scaler, machine_id):
+def predict_future(model, data_scaled, energy_scaler, machine_id, machine_type):
     last_window = np.array([data_scaled[-WINDOW_SIZE:]])
     predicted_val_scaled = model.predict(last_window)
     predicted_energy = float(energy_scaler.inverse_transform(predicted_val_scaled)[0][0])
@@ -87,6 +87,37 @@ def predict_future(model, data_scaled, energy_scaler, machine_id):
     print(f"Consumo previsto para o próximo ciclo: {predicted_energy:.2f} kWh")
     print("="*60 + "\n")
 
+    # Guardar previsão no CrateDB
+    save_prediction(machine_id, machine_type, predicted_energy)
+    return predicted_energy
+
+def save_prediction(machine_id, machine_type, predicted_energy):
+    """Guarda a previsão numa tabela dedicada no CrateDB."""
+    try:
+        conn = client.connect([CRATE_HOST])
+        cursor = conn.cursor()
+
+        # Criar tabela se não existir
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS mttextile.lstm_predictions (
+                time_index TIMESTAMP,
+                entity_id TEXT,
+                machinetype TEXT,
+                predicted_energy DOUBLE
+            )
+        """)
+
+        # Inserir previsão
+        cursor.execute("""
+            INSERT INTO mttextile.lstm_predictions 
+            (time_index, entity_id, machinetype, predicted_energy)
+            VALUES (CURRENT_TIMESTAMP, ?, ?, ?)
+        """, (machine_id, machine_type, predicted_energy))
+
+        conn.close()
+        print(f"Previsão guardada no CrateDB para {machine_id}")
+    except Exception as e:
+        print(f"Erro ao guardar previsão: {e}")
 
 # LOOP PRINCIPAL
 
@@ -100,7 +131,8 @@ def run_cycle():
         else:
             X, y, scaler, energy_scaler, data_scaled = prepare_data(df)
             model = build_and_train_model(X, y)
-            predict_future(model, data_scaled, energy_scaler, machine)
+            df_machine_type = df['machinetype'].iloc[-1] if 'machinetype' in df.columns else "Desconhecido"
+            predict_future(model, data_scaled, energy_scaler, machine, df_machine_type)
             print(f"Processo concluído para {machine}.\n")
 
 
