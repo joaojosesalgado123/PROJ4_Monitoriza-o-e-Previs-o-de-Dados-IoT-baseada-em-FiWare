@@ -53,12 +53,28 @@ MACHINES = [
 ]
 
 # Códigos de erro possíveis
-ERROR_CODES = {
-    0:   "OK",
-    101: "Tensão de fio fora do intervalo",
-    202: "Temperatura do motor elevada",
-    303: "Quebra de fio detetada",
-    404: "Sensor de fio sem sinal",
+ERROR_CODES_BY_TYPE = {
+    "Fiação": {
+        0:   "OK",
+        101: "Tensão de fio fora do intervalo",
+        202: "Quebra de fio detetada",
+        303: "Bobine quase vazia",
+        404: "Sensor de fio sem sinal",
+    },
+    "Tecelagem": {
+        0:   "OK",
+        101: "Tear bloqueado",
+        202: "Tensão de trama incorreta",
+        303: "Fio de trama partido",
+        404: "Sensor de tear sem sinal",
+    },
+    "Tingimento": {
+        0:   "OK",
+        101: "Temperatura do banho fora do intervalo",
+        202: "Nível de corante baixo",
+        303: "Bomba de circulação com falha",
+        404: "Sensor de temperatura sem sinal",
+    },
 }
 
 # Estado interno de cada máquina 
@@ -86,27 +102,36 @@ def simulate_reading(machine: dict) -> dict:
     thread_consumed = random.uniform(18, 35)
     state["thread_remaining"] = max(0, state["thread_remaining"] - thread_consumed)
 
-    # Repor fio quando ficar baixo (reabastecimento)
-    if state["thread_remaining"] < 100:
+    # Verificar se fio está a acabar ANTES de reabastecer
+    fio_baixo = state["thread_remaining"] < 100
+
+    # Repor fio quando ficar baixo
+    if fio_baixo:
         log.info(f"[{machine['name']}] Reabastecimento de fio.")
         state["thread_remaining"] = machine["base_thread"] * random.uniform(0.9, 1.0)
 
     state["total_energy"] += delta_energy
 
-    # Erro aleatório (5% de probabilidade)
+    # Erro aleatório (5% de probabilidade) específico por tipo de máquina
     if random.random() < 0.05:
-        state["error_code"] = random.choice([101, 202, 303, 404])
+        machine_errors = list(ERROR_CODES_BY_TYPE.get(machine["type"], {}).keys())
+        machine_errors = [e for e in machine_errors if e != 0]
+        state["error_code"] = random.choice(machine_errors)
         state["status"] = "error"
+    elif fio_baixo:
+        state["error_code"] = 303
+        state["status"] = "warning"
     else:
         state["error_code"] = 0
         state["status"] = "running"
 
     return {
-        "energy_consumed":  round(delta_energy, 3),       
-        "thread_remaining": round(state["thread_remaining"], 1), 
-        "error_code":       state["error_code"],
-        "status":           state["status"],
-        "timestamp":        datetime.utcnow().isoformat() + "Z",
+        "energy_consumed": round(delta_energy, 3),
+        "thread_remaining": round(state["thread_remaining"], 1),
+        "error_code": state["error_code"],
+        "error_description": ERROR_CODES_BY_TYPE.get(machine["type"], {}).get(state["error_code"], "Desconhecido"),
+        "status": state["status"],
+        "timestamp": datetime.utcnow().isoformat() + "Z",
     }
 
 
@@ -150,6 +175,10 @@ def create_entity(machine: dict, reading: dict):
             "type":  "Integer",
             "value": reading["error_code"],
         },
+        "error_description": {
+            "type": "Text",
+            "value": reading["error_description"],
+        },
         "status": {
             "type":  "Text",
             "value": reading["status"],
@@ -176,6 +205,7 @@ def update_entity(machine: dict, reading: dict):
         "energy_consumed":  {"type": "Number",   "value": reading["energy_consumed"]},
         "thread_remaining": {"type": "Number",   "value": reading["thread_remaining"]},
         "error_code":       {"type": "Integer",  "value": reading["error_code"]},
+        "error_description": {"type": "Text", "value": reading["error_description"]},
         "status":           {"type": "Text",     "value": reading["status"]},
         "timestamp":        {"type": "DateTime", "value": reading["timestamp"]},
         "machineType":      {"type": "Text", "value": machine["type"]},
@@ -223,12 +253,12 @@ def setup_subscription():
         "subject": {
             "entities": [{"idPattern": ".*", "type": "TextileMachine"}],
             "condition": {
-                "attrs": ["energy_consumed", "thread_remaining", "error_code", "status", "machineType"]
+                "attrs": ["energy_consumed", "thread_remaining", "error_code", "error_description", "status", "machineType"]
             },
         },
         "notification": {
             "http": {"url": "http://quantumleap:8668/v2/notify"},
-            "attrs": ["energy_consumed", "thread_remaining", "error_code", "status", "timestamp", "machineType"],
+            "attrs": ["energy_consumed", "thread_remaining", "error_code", "error_description", "status", "timestamp", "machineType"],
             "metadata": ["dateCreated", "dateModified"],
         },
         "throttling": 0,
