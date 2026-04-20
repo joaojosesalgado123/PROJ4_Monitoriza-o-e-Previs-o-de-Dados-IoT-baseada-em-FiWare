@@ -181,3 +181,28 @@ Projeto4/
 ├── docker-compose.yml
 └── README.md
 ```
+
+## Modelo de Dados
+
+```mermaid
+erDiagram
+  ettextilemachine {
+    TEXT entity_id PK
+    TEXT entity_type
+    TIMESTAMP time_index
+    TEXT machinetype
+    DOUBLE energy_consumed
+    DOUBLE thread_remaining
+    INTEGER error_code
+    TEXT error_description
+    TEXT status
+    TIMESTAMP timestamp
+  }
+  lstm_predictions {
+    TIMESTAMP time_index PK
+    TEXT entity_id FK
+    TEXT machinetype
+    DOUBLE predicted_energy
+  }
+  ettextilemachine ||--o{ lstm_predictions : "previsto por"
+```
