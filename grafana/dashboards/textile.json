@@ -18,6 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 1,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -181,7 +182,7 @@
               },
               {
                 "color": "red",
-                "value": 80
+                "value": 10000
               }
             ]
           }
@@ -310,14 +311,39 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
           },
           "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
             },
-            "inspect": false
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "thresholds": {
@@ -342,20 +368,19 @@
         "x": 0,
         "y": 8
       },
-      "id": 5,
+      "id": 1,
       "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
         },
-        "showHeader": true
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
-      "pluginVersion": "10.2.3",
       "targets": [
         {
           "datasource": {
@@ -365,8 +390,66 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  entity_id AS \"Máquina\",\n  status AS \"Estado\",\n  error_code AS \"Código Erro\",\n  thread_remaining AS \"Fio (m)\",\n  energy_consumed AS \"Energia (kWh)\",\n  time_index AS \"Última Leitura\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE time_index = (\n  SELECT MAX(time_index)\n  FROM \"mttextile\".\"ettextilemachine\" t2\n  WHERE t2.entity_id = \"mttextile\".\"ettextilemachine\".entity_id\n)\nORDER BY entity_id ASC",
+          "rawSql": "SELECT\n  time_index AS \"time\",\n  energy_consumed AS \"Máquina A\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:001'\nORDER BY time_index ASC",
           "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "hide": false,
+          "rawQuery": true,
+          "rawSql": "SELECT\n  time_index AS \"time\",\n  energy_consumed AS \"Máquina B\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:002'\nORDER BY time_index ASC",
+          "refId": "B",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "hide": false,
+          "rawQuery": true,
+          "rawSql": "SELECT\n  time_index AS \"time\",\n  energy_consumed AS \"Máquina C\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:003'\nORDER BY time_index ASC",
+          "refId": "C",
           "sql": {
             "columns": [
               {
@@ -386,8 +469,8 @@
           }
         }
       ],
-      "title": "Estado Atual das Máquinas",
-      "type": "table"
+      "title": "Energia Consumida por Máquina",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -453,175 +536,6 @@
         "w": 12,
         "x": 12,
         "y": 8
-      },
-      "id": 2,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT time_index AS \"time\", thread_remaining AS \"Máquina A\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:001'\nORDER BY time_index ASC",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        },
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "hide": false,
-          "rawQuery": true,
-          "rawSql": "SELECT time_index AS \"time\", thread_remaining AS \"Máquina B\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:002'\nORDER BY time_index ASC",
-          "refId": "B",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        },
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "hide": false,
-          "rawQuery": true,
-          "rawSql": "SELECT time_index AS \"time\", thread_remaining AS \"Máquina C\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:003'\nORDER BY time_index ASC",
-          "refId": "C",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Fio Restante por Máquina (metros)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 16
       },
       "id": 3,
       "options": {
@@ -735,6 +649,393 @@
       "fieldConfig": {
         "defaults": {
           "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "10.2.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  entity_id AS \"Máquina\",\n  machinetype AS \"Tipo\",\n  status AS \"Estado\",\n  error_code AS \"Código Erro\",\n  error_description AS \"Descrição Erro\",\n  thread_remaining AS \"Fio (m)\",\n  energy_consumed AS \"Energia (kWh)\",\n  time_index AS \"Última Leitura\"\nFROM mttextile.ettextilemachine\nWHERE time_index IN (\n  SELECT MAX(time_index)\n  FROM mttextile.ettextilemachine\n  GROUP BY entity_id\n)\nORDER BY entity_id ASC",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Estado Atual das Máquinas",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "error": {
+                  "color": "dark-red",
+                  "index": 2,
+                  "text": "ERRO"
+                },
+                "running ": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "OK"
+                },
+                "warning": {
+                  "color": "yellow",
+                  "index": 1,
+                  "text": "AVISO"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.2.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\r\n  status AS \"Estado\",\r\n  error_description AS \"Descrição\"\r\nFROM mttextile.ettextilemachine\r\nWHERE time_index IN (\r\n  SELECT MAX(time_index)\r\n  FROM mttextile.ettextilemachine\r\n  WHERE entity_id = 'urn:ngsi-ld:TextileMachine:001'\r\n)",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Estado — Máquina A (Fiação)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "error": {
+                  "color": "dark-red",
+                  "index": 2,
+                  "text": "ERRO"
+                },
+                "running ": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "OK"
+                },
+                "warning": {
+                  "color": "yellow",
+                  "index": 1,
+                  "text": "AVISO"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.2.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\r\n  status AS \"Estado\",\r\n  error_description AS \"Descrição\"\r\nFROM mttextile.ettextilemachine\r\nWHERE time_index IN (\r\n  SELECT MAX(time_index)\r\n  FROM mttextile.ettextilemachine\r\n  WHERE entity_id = 'urn:ngsi-ld:TextileMachine:002'\r\n)",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Estado — Máquina B (Tecelagem)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "error": {
+                  "color": "dark-red",
+                  "index": 2,
+                  "text": "ERRO"
+                },
+                "running ": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "OK"
+                },
+                "warning": {
+                  "color": "yellow",
+                  "index": 1,
+                  "text": "AVISO"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.2.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\r\n  status AS \"Estado\",\r\n  error_description AS \"Descrição\"\r\nFROM mttextile.ettextilemachine\r\nWHERE time_index IN (\r\n  SELECT MAX(time_index)\r\n  FROM mttextile.ettextilemachine\r\n  WHERE entity_id = 'urn:ngsi-ld:TextileMachine:003'\r\n)",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Estado — Máquina C (Tingimento)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
             "mode": "palette-classic"
           },
           "custom": {
@@ -790,9 +1091,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 32
       },
-      "id": 1,
+      "id": 2,
       "options": {
         "legend": {
           "calcs": [],
@@ -814,7 +1115,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_index AS \"time\",\n  energy_consumed AS \"Máquina A\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:001'\nORDER BY time_index ASC",
+          "rawSql": "SELECT time_index AS \"time\", thread_remaining AS \"Máquina A\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:001'\nORDER BY time_index ASC",
           "refId": "A",
           "sql": {
             "columns": [
@@ -843,7 +1144,7 @@
           "format": "table",
           "hide": false,
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_index AS \"time\",\n  energy_consumed AS \"Máquina B\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:002'\nORDER BY time_index ASC",
+          "rawSql": "SELECT time_index AS \"time\", thread_remaining AS \"Máquina B\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:002'\nORDER BY time_index ASC",
           "refId": "B",
           "sql": {
             "columns": [
@@ -872,7 +1173,7 @@
           "format": "table",
           "hide": false,
           "rawQuery": true,
-          "rawSql": "SELECT\n  time_index AS \"time\",\n  energy_consumed AS \"Máquina C\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:003'\nORDER BY time_index ASC",
+          "rawSql": "SELECT time_index AS \"time\", thread_remaining AS \"Máquina C\"\nFROM \"mttextile\".\"ettextilemachine\"\nWHERE $__timeFilter(time_index)\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:003'\nORDER BY time_index ASC",
           "refId": "C",
           "sql": {
             "columns": [
@@ -893,24 +1194,24 @@
           }
         }
       ],
-      "title": "Energia Consumida por Máquina",
+      "title": "Fio Restante por Máquina (metros)",
       "type": "timeseries"
     }
   ],
-  "refresh": "",
+  "refresh": "5s",
   "schemaVersion": 39,
   "tags": [],
   "templating": {
     "list": []
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-5m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Monitorização Máquinas Têxteis",
   "uid": "f195c180-5792-42d8-90a6-bfb9e401dd2a",
-  "version": 1,
+  "version": 5,
   "weekStart": ""
 }
