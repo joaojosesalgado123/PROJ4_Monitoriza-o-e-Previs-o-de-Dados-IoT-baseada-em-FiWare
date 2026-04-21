@@ -90,43 +90,70 @@ def predict_future(model, data_scaled, energy_scaler, machine_id, machine_type):
     predicted_val_scaled = model.predict(last_window)
     predicted_energy = float(energy_scaler.inverse_transform(predicted_val_scaled)[0][0])
 
+    # Calcular margem de erro com base nas últimas previsões vs valores reais
+    margin = calculate_error_margin(machine_id, predicted_energy, energy_scaler, model, data_scaled)
+
     print("\n" + "="*60)
     print(f"PREVISÃO: {machine_id}")
-    print(f"Consumo previsto para o próximo ciclo: {predicted_energy:.2f} kWh")
+    print(f"Consumo previsto: {predicted_energy:.2f} kWh")
+    print(f"Margem de erro: ±{margin:.2f} kWh")
+    print(f"Intervalo: [{predicted_energy - margin:.2f}, {predicted_energy + margin:.2f}] kWh")
     print("="*60 + "\n")
 
-    # Guardar previsão no CrateDB
-    save_prediction(machine_id, machine_type, predicted_energy)
+    save_prediction(machine_id, machine_type, predicted_energy, margin)
     return predicted_energy
 
-def save_prediction(machine_id, machine_type, predicted_energy):
-    """Guarda a previsão numa tabela dedicada no CrateDB."""
+
+def calculate_error_margin(machine_id, predicted_energy, energy_scaler, model, data_scaled):
+    """Calcula a margem de erro com base no erro histórico do modelo."""
+    try:
+        # Fazer previsões nas últimas N janelas e comparar com valores reais
+        errors = []
+        check_points = min(10, len(data_scaled) - WINDOW_SIZE)
+
+        for i in range(check_points):
+            idx = len(data_scaled) - WINDOW_SIZE - check_points + i
+            window = np.array([data_scaled[idx:idx + WINDOW_SIZE]])
+            pred_scaled = model.predict(window, verbose=0)
+            pred = float(energy_scaler.inverse_transform(pred_scaled)[0][0])
+            real = float(energy_scaler.inverse_transform([[data_scaled[idx + WINDOW_SIZE][0]]])[0][0])
+            errors.append(abs(pred - real))
+
+        margin = float(np.mean(errors)) if errors else predicted_energy * 0.1
+        return round(margin, 3)
+    except Exception as e:
+        print(f"Erro ao calcular margem: {e}")
+        return round(predicted_energy * 0.1, 3)
+
+def save_prediction(machine_id, machine_type, predicted_energy, margin):
+    """Guarda a previsão com margem de erro numa tabela dedicada no CrateDB."""
     try:
         conn = client.connect([CRATE_HOST])
         cursor = conn.cursor()
 
-        # Criar tabela se não existir
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS mttextile.lstm_predictions (
                 time_index TIMESTAMP,
                 entity_id TEXT,
                 machinetype TEXT,
-                predicted_energy DOUBLE
+                predicted_energy DOUBLE,
+                predicted_energy_min DOUBLE,
+                predicted_energy_max DOUBLE
             )
         """)
 
-        # Inserir previsão
         cursor.execute("""
             INSERT INTO mttextile.lstm_predictions 
-            (time_index, entity_id, machinetype, predicted_energy)
-            VALUES (CURRENT_TIMESTAMP, ?, ?, ?)
-        """, (machine_id, machine_type, predicted_energy))
+            (time_index, entity_id, machinetype, predicted_energy, predicted_energy_min, predicted_energy_max)
+            VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)
+        """, (machine_id, machine_type, predicted_energy,
+              predicted_energy - margin,
+              predicted_energy + margin))
 
         conn.close()
         print(f"Previsão guardada no CrateDB para {machine_id}")
     except Exception as e:
         print(f"Erro ao guardar previsão: {e}")
-
 # LOOP PRINCIPAL
 
 def run_cycle():

@@ -79,7 +79,40 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Máximo - Máquina A"
+            },
+            "properties": [
+              {
+                "id": "custom.fillBelowTo",
+                "value": "Mínimo - Máquina A"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 15
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mínimo - Máquina A"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -140,6 +173,64 @@
           "rawQuery": true,
           "rawSql": "SELECT\r\n  time_index AS \"time\",\r\n  predicted_energy AS \"Previsto - Máquina A\"\r\nFROM mttextile.lstm_predictions\r\nWHERE $__timeFilter(time_index)\r\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:001'\r\nORDER BY time_index ASC",
           "refId": "B",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "hide": false,
+          "rawQuery": true,
+          "rawSql": "SELECT\r\n  time_index AS \"time\",\r\n  predicted_energy_min AS \"Mínimo - Máquina A\"\r\nFROM mttextile.lstm_predictions\r\nWHERE $__timeFilter(time_index)\r\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:001'\r\nORDER BY time_index ASC",
+          "refId": "C",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "c4eebee0-e0a1-4048-860e-371c4a25d8d2"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "hide": false,
+          "rawQuery": true,
+          "rawSql": "SELECT\r\n  time_index AS \"time\",\r\n  predicted_energy_max AS \"Máximo - Máquina A\"\r\nFROM mttextile.lstm_predictions\r\nWHERE $__timeFilter(time_index)\r\n  AND entity_id = 'urn:ngsi-ld:TextileMachine:001'\r\nORDER BY time_index ASC",
+          "refId": "D",
           "sql": {
             "columns": [
               {
@@ -1205,13 +1296,13 @@
     "list": []
   },
   "time": {
-    "from": "now-5m",
+    "from": "now-15m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Monitorização Máquinas Têxteis",
   "uid": "f195c180-5792-42d8-90a6-bfb9e401dd2a",
-  "version": 5,
+  "version": 1,
   "weekStart": ""
 }
