@@ -102,11 +102,13 @@ services:
     environment:
       - ORION_HOST=orion
       - ORION_PORT=1026
-      - SEND_INTERVAL=30
+      - MACHINES_FILE=/config/machines.json
+    volumes:
+      - machines_config:/config
     networks:
       - fiware
 
-# --- LSTM ---
+  # --- LSTM ---
   lstm:
     build:
       context: ./lstm
@@ -121,10 +123,46 @@ services:
     networks:
       - fiware
 
+  # --- Backend Admin ---
+  backend:
+    build:
+      context: ./admin/backend
+      dockerfile: Dockerfile
+    container_name: backend
+    restart: unless-stopped
+    depends_on:
+      orion:
+        condition: service_healthy
+    environment:
+      - ORION_HOST=orion
+      - ORION_PORT=1026
+      - MACHINES_FILE=/config/machines.json
+    volumes:
+      - machines_config:/config
+    networks:
+      - fiware
+    ports:
+      - "5000:5000"
+
+  # --- Frontend Admin ---
+  frontend:
+    build:
+      context: ./admin/frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5174:5174"
+    networks:
+      - fiware
+
 volumes:
   mongo_data:
   crate_data:
   grafana_data:
+  machines_config:
 
 networks:
   fiware:

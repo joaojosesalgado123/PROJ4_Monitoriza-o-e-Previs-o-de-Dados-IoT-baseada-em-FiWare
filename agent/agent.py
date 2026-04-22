@@ -4,6 +4,7 @@ import random
 import logging
 import requests
 from datetime import datetime
+import json
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,7 +16,17 @@ log = logging.getLogger(__name__)
 ORION_HOST = os.getenv("ORION_HOST", "localhost")
 ORION_PORT = os.getenv("ORION_PORT", "1026")
 ORION_URL  = f"http://{ORION_HOST}:{ORION_PORT}"
-SEND_INTERVAL = int(os.getenv("SEND_INTERVAL", "30"))  # 30 em 30 segundos a gerar dados
+MACHINES_FILE = os.getenv("MACHINES_FILE", "/config/machines.json")
+
+def load_config():
+    """Carrega as máquinas e configuração do ficheiro JSON."""
+    try:
+        with open(MACHINES_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data["machines"], data["config"]["send_interval"]
+    except Exception as e:
+        log.error(f"Erro ao carregar configuração: {e}")
+        return [], 30
 
 # Fiware-Service e Fiware-ServicePath (short context / multitenancy)
 FIWARE_SERVICE      = "textile"
@@ -27,30 +38,7 @@ HEADERS = {
     "Fiware-Servicepath": FIWARE_SERVICE_PATH,
 }
 
-# --- Máquinas ---
-MACHINES = [
-    {
-        "id": "urn:ngsi-ld:TextileMachine:001",
-        "name": "Máquina A",
-        "type": "Fiação",
-        "base_energy": 5.2,    
-        "base_thread": 800.0,  
-    },
-    {
-        "id": "urn:ngsi-ld:TextileMachine:002",
-        "name": "Máquina B",
-        "type": "Tecelagem",
-        "base_energy": 4.8,
-        "base_thread": 950.0,
-    },
-    {
-        "id": "urn:ngsi-ld:TextileMachine:003",
-        "name": "Máquina C",
-        "type": "Tingimento",
-        "base_energy": 6.1,
-        "base_thread": 750.0,
-    },
-]
+
 
 # Códigos de erro possíveis
 ERROR_CODES_BY_TYPE = {
@@ -77,16 +65,6 @@ ERROR_CODES_BY_TYPE = {
     },
 }
 
-# Estado interno de cada máquina 
-machine_state = {
-    m["id"]: {
-        "thread_remaining": m["base_thread"],
-        "total_energy":     0.0,
-        "error_code":       0,
-        "status":           "running",
-    }
-    for m in MACHINES
-}
 
 # Dados simulados
 
@@ -287,21 +265,35 @@ def wait_for_orion(retries: int = 20, delay: int = 5):
         time.sleep(delay)
     raise RuntimeError("Orion não ficou disponível a tempo.")
 
+machine_state = {}
+
 
 def main():
     log.info(" IoT Agent a iniciar ")
-    log.info(f"Orion: {ORION_URL} | Intervalo: {SEND_INTERVAL}s | Máquinas: {len(MACHINES)}")
 
     wait_for_orion()
     setup_subscription()
 
     while True:
-        for machine in MACHINES:
+        machines, send_interval = load_config()
+        log.info(f"Orion: {ORION_URL} | Intervalo: {send_interval}s | Máquinas: {len(machines)}")
+
+        for machine in machines:
+            # Inicializar estado se máquina nova
+            if machine["id"] not in machine_state:
+                machine_state[machine["id"]] = {
+                    "thread_remaining": machine["base_thread"],
+                    "total_energy": 0.0,
+                    "error_code": 0,
+                    "status": "running",
+                }
             try:
                 send_reading(machine)
             except Exception as e:
                 log.error(f"Erro inesperado em {machine['id']}: {e}")
-        time.sleep(SEND_INTERVAL)
+        time.sleep(send_interval)
+
+
 
 
 if __name__ == "__main__":

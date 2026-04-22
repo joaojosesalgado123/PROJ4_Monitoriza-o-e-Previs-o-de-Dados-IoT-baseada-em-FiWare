@@ -1,0 +1,28 @@
+{
+  "machines": [
+    {
+      "id": "urn:ngsi-ld:TextileMachine:001",
+      "name": "Máquina A",
+      "type": "Fiação",
+      "base_energy": 5.2,
+      "base_thread": 800.0
+    },
+    {
+      "id": "urn:ngsi-ld:TextileMachine:002",
+      "name": "Máquina B",
+      "type": "Tecelagem",
+      "base_energy": 4.8,
+      "base_thread": 950.0
+    },
+    {
+      "id": "urn:ngsi-ld:TextileMachine:003",
+      "name": "Máquina C",
+      "type": "Tingimento",
+      "base_energy": 6.1,
+      "base_thread": 750.0
+    }
+  ],
+  "config": {
+    "send_interval": 30
+  }
+}
