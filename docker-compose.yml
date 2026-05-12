@@ -157,6 +157,7 @@ services:
     ports:
       - "3001:3001"
     environment:
+      - API_URL=http://backend:5000
       - NEXT_PUBLIC_API_URL=http://localhost:5000
     volumes:
       - ./admin/frontend:/app
