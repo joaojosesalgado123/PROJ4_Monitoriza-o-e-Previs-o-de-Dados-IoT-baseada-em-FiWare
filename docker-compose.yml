@@ -150,12 +150,17 @@ services:
     build:
       context: ./admin/frontend
       dockerfile: Dockerfile
-    container_name: frontend
+    container_name: textile-frontend
     restart: unless-stopped
     depends_on:
       - backend
     ports:
-      - "5174:5174"
+      - "3001:3001"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5000
+    volumes:
+      - ./admin/frontend:/app
+      - /app/node_modules
     networks:
       - fiware
 
