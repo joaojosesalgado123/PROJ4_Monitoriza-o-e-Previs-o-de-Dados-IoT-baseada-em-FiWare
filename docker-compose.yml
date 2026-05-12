@@ -137,6 +137,7 @@ services:
       - ORION_HOST=orion
       - ORION_PORT=1026
       - MACHINES_FILE=/config/machines.json
+      - CRATE_HOST=crate
     volumes:
       - machines_config:/config
     networks:

@@ -116,6 +116,7 @@ def add_machine():
 def remove_machine(machine_id):
     data = load_machines()
     full_id = f"urn:ngsi-ld:TextileMachine:{machine_id}"
+    purge = request.args.get("purge", "false").lower() == "true"
 
     machines = [m for m in data["machines"] if m["id"] != full_id]
     if len(machines) == len(data["machines"]):
@@ -127,15 +128,29 @@ def remove_machine(machine_id):
     # Remover do Orion
     try:
         requests.delete(
-            f"{ORION_URL}/v2/entities/{full_id}",
-            headers=FIWARE_HEADERS,
+            f"{ORION_URL}/v2/entities/{quote(full_id, safe='')}",
+            headers=FIWARE_GET_HEADERS,
             timeout=3
         )
     except Exception as e:
         log.warning(f"Erro ao remover do Orion: {e}")
 
-    log.info(f"Máquina removida: {full_id}")
-    return jsonify({"message": "Máquina removida com sucesso"}), 200
+    # Apagar dados históricos do CrateDB se purge=true
+    if purge:
+        try:
+            crate_url = f"http://{os.getenv('CRATE_HOST', 'crate')}:4200/_sql"
+            requests.post(crate_url, json={
+                "stmt": f"DELETE FROM mttextile.ettextilemachine WHERE entity_id = '{full_id}'"
+            }, timeout=5)
+            requests.post(crate_url, json={
+                "stmt": f"DELETE FROM mttextile.lstm_predictions WHERE entity_id = '{full_id}'"
+            }, timeout=5)
+            log.info(f"Dados históricos apagados do CrateDB para {full_id}")
+        except Exception as e:
+            log.warning(f"Erro ao apagar dados do CrateDB: {e}")
+
+    log.info(f"Máquina removida: {full_id} | purge={purge}")
+    return jsonify({"message": "Máquina removida com sucesso", "purge": purge}), 200
 
 
 @app.route("/api/config", methods=["GET"])
