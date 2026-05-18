@@ -10,12 +10,16 @@ export default function Header(){
     
     const getTitle = () => {
         if (pathname === '/') return 'Dashboard Overview';
+        if (pathname === '/maquinas') return 'Gestão de Máquinas';
         if (pathname === '/previsao') return 'Previsão com IA';
+        if (pathname === '/alertas') return 'Centro de Alertas';
         return pathname.replace('/', '').charAt(0).toUpperCase() + pathname.slice(2);
     };
 
     const getSubtitle = () => {
+        if (pathname === '/maquinas') return 'Agentes IoT registados no Orion Context Broker';
         if (pathname === '/previsao') return 'Modelo LSTM · consumo e ocorrências nas próximas horas';
+        if (pathname === '/alertas') return 'Ocorrências críticas, em manutenção e resolvidas';
         return 'Monitorização preditiva · 3 máquinas · Orion Context Broker';
     };
 

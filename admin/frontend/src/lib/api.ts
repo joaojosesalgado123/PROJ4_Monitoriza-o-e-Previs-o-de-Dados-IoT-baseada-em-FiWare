@@ -78,6 +78,97 @@ export async function fetchMachines(): Promise<MachineItem[]> {
   return data.map(adaptMachine);
 }
 
+const CHART_COLORS = ['#0f7ee7', '#38a4e8', '#d7bf42', '#10b981', '#8b5cf6', '#f59e0b'];
+
+type FallbackSeries = {
+  history: number[];
+  forecast: number[];
+  consumed: number[];
+  errors: number[];
+};
+
+// TODO FASE 2: substituir por dados reais de /api/<id>/history e /api/<id>/predictions
+const FALLBACK_SERIES: FallbackSeries[] = [
+  {
+    history: [13.7, 12.7, 12.0, 12.3, 13.5, 14.5, 14.6, 13.6, 12.2, 11.4, 11.5, 12.6, 13.4, 13.5, 12.4, 11.2, 10.9, 11.8, 13.1, 14.1, 14.3, 13.5, 12.4, 12.0],
+    forecast: [12.7, 12.8, 12.4, 11.9, 11.8, 12.2, 13.0, 13.7, 13.9, 13.5, 12.9, 12.9, 13.8],
+    consumed: [3.1, 5.8, 2.4, 6.2, 3.6, 6.7, 2.8, 5.5, 3.7, 6.1, 4.1, 6.4],
+    errors: [0, 320, 0, 0, 405, 0, 0, 0, 290, 0, 0, 260],
+  },
+  {
+    history: [12.4, 11.6, 12.1, 11.8, 12.9, 13.3, 12.7, 12.0, 11.5, 11.0, 10.7, 11.3, 12.2, 12.6, 11.9, 10.8, 10.2, 10.6, 11.2, 11.9, 12.3, 11.8, 11.2, 10.9],
+    forecast: [11.4, 11.6, 11.7, 11.5, 11.1, 11.3, 11.8, 12.2, 12.4, 12.1, 11.9, 12.0, 12.3],
+    consumed: [6.8, 4.0, 7.2, 3.9, 6.1, 4.3, 7.0, 3.6, 6.5, 4.7, 6.9, 5.1],
+    errors: [0, 0, 280, 0, 0, 0, 0, 390, 0, 0, 310, 0],
+  },
+  {
+    history: [11.3, 11.7, 11.4, 12.0, 12.3, 12.1, 11.9, 12.4, 12.2, 11.8, 11.6, 11.9, 12.0, 12.3, 11.7, 11.4, 11.6, 11.8, 12.1, 12.2, 12.0, 11.8, 11.6, 11.5],
+    forecast: [11.7, 11.9, 12.0, 12.1, 12.0, 11.8, 11.9, 12.2, 12.3, 12.1, 12.0, 12.1, 12.4],
+    consumed: [4.2, 3.7, 5.3, 3.5, 4.8, 3.9, 4.1, 3.2, 5.0, 3.8, 4.7, 3.5],
+    errors: [0, 0, 0, 260, 0, 0, 380, 0, 0, 395, 0, 300],
+  },
+];
+
+export type ChartMachine = {
+  id: string;
+  name: string;
+  shortName: string;
+  type: string;
+  line: string;
+  color: string;
+  status: 'Running' | 'Error' | 'Offline';
+  yarnRemaining: number;
+  consumption: number;
+  error: string;
+  updatedAt: string;
+  history: number[];
+  forecast: number[];
+  consumed: number[];
+  errors: number[];
+  failureProbability: number;
+};
+
+function toChartMachine(m: MachineItem, index: number): ChartMachine {
+  const statusMap: Record<MachineStatus, 'Running' | 'Error' | 'Offline'> = {
+    running: 'Running',
+    error: 'Error',
+    offline: 'Offline',
+  };
+
+  // TODO FASE 2: derivar do modelo LSTM real
+  const failureProbMap: Record<MachineStatus, number> = {
+    error: 70,
+    offline: 20,
+    running: 10,
+  };
+
+  const series = FALLBACK_SERIES[index % FALLBACK_SERIES.length];
+
+  return {
+    id: m.id,
+    name: m.name,
+    shortName: m.name,
+    type: m.line,
+    line: m.line,
+    color: CHART_COLORS[index % CHART_COLORS.length],
+    status: statusMap[m.status],
+    yarnRemaining: m.yarnRemaining,
+    consumption: m.consumption,
+    error: m.lastError ? `${m.lastError.code} · ${m.lastError.message}` : '-',
+    updatedAt: 'agora',
+    history: series.history,
+    forecast: series.forecast,
+    consumed: series.consumed,
+    errors: series.errors,
+    failureProbability: failureProbMap[m.status],
+  };
+}
+
+export async function fetchChartMachines(): Promise<ChartMachine[]> {
+  const machines = await fetchMachines();
+  return machines.map(toChartMachine);
+}
+
 export function computeKpis(machines: MachineItem[]): KpiItem[] {
   const total = machines.length;
   const running = machines.filter((m) => m.status === 'running').length;

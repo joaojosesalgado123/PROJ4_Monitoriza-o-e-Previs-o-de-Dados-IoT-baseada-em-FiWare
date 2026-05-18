@@ -3,16 +3,19 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Gauge, Cpu, BrainCircuit, TriangleAlert } from 'lucide-react';
+import { useMachines } from '../lib/useMachines';
 
 const links = [
-    { href : '/', label: 'Overview', icon : Gauge}, 
+    { href : '/', label: 'Overview', icon : Gauge},
     { href : '/maquinas', label: 'Máquinas', icon : Cpu},
     { href : '/previsao', label: 'Previsão IA', icon : BrainCircuit, badge: 'LSTM'},
-    { href : '/alertas', label: 'Alertas', icon : TriangleAlert, badge: '3'}
+    { href : '/alertas', label: 'Alertas', icon : TriangleAlert}
 ]
 
 export default function Sidebar(){
     const pathname = usePathname();
+    const { machines } = useMachines();
+    const errorCount = machines.filter((m) => m.status === 'Error').length;
 
     return (
         <aside className='fixed top-0 left-0 h-screen w-64 border-r border-slate-200 bg-slate-50'>
@@ -53,15 +56,20 @@ export default function Sidebar(){
                                         />
                                         {link.label}
                                     </div>
-                                    {link.badge && (
-                                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                                            link.badge === 'LSTM'
-                                            ? 'bg-violet-600 text-white'
-                                            : 'bg-rose-100 text-rose-500'
-                                        }`}>
-                                            {link.badge}
-                                        </span>
-                                    )}
+                                    {(() => {
+                                        const badge = link.href === '/alertas'
+                                            ? (errorCount > 0 ? String(errorCount) : undefined)
+                                            : link.badge;
+                                        return badge ? (
+                                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                                                badge === 'LSTM'
+                                                ? 'bg-violet-600 text-white'
+                                                : 'bg-rose-100 text-rose-500'
+                                            }`}>
+                                                {badge}
+                                            </span>
+                                        ) : null;
+                                    })()}
                                     
                                 </Link>
                             );
@@ -75,7 +83,7 @@ export default function Sidebar(){
                     Broker FiWare
                 </div>
                 <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                    Orion Context Broker online · 3 agentes ativos
+                    Orion Context Broker online · {machines.length} agentes ativos
                 </p>
             </div>
         </aside>
