@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roteiro Madrid — 22 a 25 Maio 2026</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f7f4;color:#1a1a1a;min-height:100vh;padding:2rem 1rem}
+  .page{max-width:720px;margin:0 auto}
+  .top-bar{margin-bottom:2rem;padding-bottom:1.5rem;border-bottom:1px solid #e5e3de}
+  .meta{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
+  .main-title{font-size:26px;font-weight:600;color:#111;margin-bottom:4px}
+  .sub-title{font-size:14px;color:#666}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:1.5rem;align-items:center}
+  .leg-label{font-size:11px;color:#999}
+  .leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:#555}
+  .leg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:1.5rem}
+  .tab{padding:7px 14px;border-radius:8px;border:1px solid #ddd;background:#fff;cursor:pointer;font-size:12px;font-weight:500;color:#666;transition:all .12s;white-space:nowrap}
+  .tab:hover{border-color:#bbb;color:#333}
+  .tab.on{background:#111;color:#fff;border-color:#111}
+  .panel{display:none}.panel.on{display:block}
+  .day-hdr{margin-bottom:1.25rem}
+  .day-label{font-size:10px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px}
+  .day-name{font-size:19px;font-weight:600;color:#111;margin-bottom:3px}
+  .day-desc{font-size:13px;color:#666;line-height:1.5}
+  .tl-item{display:grid;grid-template-columns:56px 18px 1fr;gap:0 10px;align-items:start}
+  .tl-time{font-size:11px;font-weight:600;color:#999;padding-top:4px;text-align:right;line-height:1.3}
+  .tl-dot-col{display:flex;flex-direction:column;align-items:center}
+  .tl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}
+  .tl-line{width:1px;background:#e5e3de;flex:1;min-height:22px}
+  .tl-body{padding-bottom:14px}
+  .tl-act{font-size:13.5px;font-weight:600;color:#111;margin-bottom:3px;line-height:1.4}
+  .tl-note{font-size:12px;color:#666;line-height:1.6}
+  .badge{display:inline-block;font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;letter-spacing:.02em}
+  .bdg-warn{background:#fff3e0;color:#b45309}
+  .bdg-ok{background:#ecfdf5;color:#065f46}
+  .bdg-free{background:#d1fae5;color:#065f46}
+  .bdg-blue{background:#eff6ff;color:#1e40af}
+  .alert{border-radius:10px;padding:12px 14px;margin:1rem 0;font-size:12.5px;line-height:1.6}
+  .alert-w{background:#fff8ed;border-left:3px solid #f59e0b}
+  .alert-i{background:#eff6ff;border-left:3px solid #3b82f6}
+  .alert-s{background:#ecfdf5;border-left:3px solid #10b981}
+  .alert p{color:#555;margin-top:3px}
+  .alert strong{color:#111;font-weight:600}
+  .sec-label{font-size:10px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:.1em;margin:1.75rem 0 .75rem}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+  .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+  .card{background:#fff;border-radius:10px;padding:12px 14px;border:1px solid #e5e3de}
+  .card-name{font-size:13px;font-weight:600;color:#111;margin-bottom:3px}
+  .card-det{font-size:11.5px;color:#666;line-height:1.55}
+  .divider{height:1px;background:#e5e3de;margin:1.5rem 0}
+  .d-transport{background:#3b82f6}
+  .d-food{background:#f59e0b}
+  .d-museum{background:#8b5cf6}
+  .d-outdoor{background:#10b981}
+  .d-stadium{background:#ef4444}
+  .d-hotel{background:#9ca3af}
+  .d-free{background:#22c55e}
+  @media print{
+    body{background:#fff;padding:1rem}
+    .tabs{display:none}
+    .panel{display:block!important}
+    .day-hdr{page-break-before:always}
+    .day-hdr:first-child{page-break-before:avoid}
+  }
+  @media(max-width:480px){
+    body{padding:1rem .75rem}
+    .main-title{font-size:20px}
+    .tabs{gap:4px}
+    .tab{padding:6px 10px;font-size:11px}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="top-bar">
+  <p class="meta">Roteiro definitivo &nbsp;·&nbsp; Versão final</p>
+  <h1 class="main-title">Madrid · 22–25 maio 2026</h1>
+  <p class="sub-title">Travelodge Torrelaguna &nbsp;·&nbsp; IB0544 chegada 10h40 &nbsp;·&nbsp; IB1153 partida 19h40</p>
+</div>
+
+<div class="legend">
+  <span class="leg-label">tipos:</span>
+  <span class="leg-item"><span class="leg-dot d-transport"></span>transporte</span>
+  <span class="leg-item"><span class="leg-dot d-food"></span>refeição</span>
+  <span class="leg-item"><span class="leg-dot d-museum"></span>museu/visita</span>
+  <span class="leg-item"><span class="leg-dot d-outdoor"></span>exterior/monumento</span>
+  <span class="leg-item"><span class="leg-dot d-stadium"></span>estádio</span>
+  <span class="leg-item"><span class="leg-dot d-free"></span>gratuito</span>
+  <span class="leg-item"><span class="leg-dot d-hotel"></span>hotel</span>
+</div>
+
+<div class="tabs">
+  <button class="tab on" onclick="sw(0)">Dia 1 · Sex 22</button>
+  <button class="tab" onclick="sw(1)">Dia 2 · Sáb 23</button>
+  <button class="tab" onclick="sw(2)">Dia 3 · Dom 24</button>
+  <button class="tab" onclick="sw(3)">Dia 4 · Seg 25</button>
+  <button class="tab" onclick="sw(4)">Bilhetes &amp; Dicas</button>
+</div>
+
+<!-- ====== DAY 1 ====== -->
+<div id="p0" class="panel on">
+<div class="day-hdr">
+  <p class="day-label">Dia 1 · Sexta, 22 de maio</p>
+  <h2 class="day-name">Centro + Banco de Espanha + Cibeles + Nomad + Reina Sofía</h2>
+  <p class="day-desc">Check-in às 15h — aproveita a manhã no centro com a mochila. À tarde: Cibeles, Nomad e Reina Sofía.</p>
+</div>
+
+<div class="alert alert-i"><strong>Ordem corrigida:</strong><p>Nomad (18h30) vem ANTES do Reina Sofía (19h50) — são 20 min de distância e a última entrada do Nomad é às 20h. Na ordem inversa chegavas demasiado tarde.</p></div>
+
+<div class="tl-item"><div class="tl-time">10h40</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">✈️ Aterras no T4 Barajas</p><p class="tl-note">Recolhe a bagagem e segue para o metro.</p></div></div>
+<div class="tl-item"><div class="tl-time">11h15</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Metro L8 → Nuevos Ministerios, transfer → Gran Vía</p><p class="tl-note">~35 min no total. Guarda o bilhete — a máquina devolve ao sair.</p></div></div>
+<div class="tl-item"><div class="tl-time">11h45</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Gran Vía + Plaza del Callao</p><p class="tl-note">Autocarros 001, 002 e C03 são gratuitos — usa-os para te deslocares pelo centro.</p></div></div>
+<div class="tl-item"><div class="tl-time">12h15</div><div class="tl-dot-col"><div class="tl-dot d-free"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Rooftop El Corte Inglés Callao <span class="badge bdg-free">gratuito</span></p><p class="tl-note">9.º andar. Vista panorâmica sobre a Gran Vía. Entrada livre — compra uma bebida e desfruta.</p></div></div>
+<div class="tl-item"><div class="tl-time">12h45</div><div class="tl-dot-col"><div class="tl-dot d-food"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">McDonald's Gran Vía</p><p class="tl-note">Interior em mármore — foi uma joalharia de luxo do séc. XIX. Vale entrar só para ver a arquitetura.</p></div></div>
+<div class="tl-item"><div class="tl-time">13h15</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Puerta del Sol</p><p class="tl-note">Km 0 de Espanha. Foto com o urso e a madroñera.</p></div></div>
+<div class="tl-item"><div class="tl-time">13h35</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Plaza Mayor</p><p class="tl-note">Praça barroca do séc. XVII. Entra pelos arcos e explora.</p></div></div>
+<div class="tl-item"><div class="tl-time">13h50</div><div class="tl-dot-col"><div class="tl-dot d-food"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Mercado de San Miguel</p><p class="tl-note">Mercado gourmet mesmo ao lado da Plaza Mayor. Prova um pintxo ou marisco.</p></div></div>
+<div class="tl-item"><div class="tl-time">14h10</div><div class="tl-dot-col"><div class="tl-dot d-food"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Chocolatería San Ginés</p><p class="tl-note">Chocolate quente com churros desde 1894. Uma das experiências mais icónicas de Madrid.</p></div></div>
+<div class="tl-item"><div class="tl-time">14h30</div><div class="tl-dot-col"><div class="tl-dot d-free"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Tienda de los Deseos <span class="badge bdg-free">gratuito</span></p><p class="tl-note">C. de la Escalinata 7. Escreve o teu desejo e pendura-o na parede. Mágico e único.</p></div></div>
+<div class="tl-item"><div class="tl-time">15h00</div><div class="tl-dot-col"><div class="tl-dot d-hotel"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Hotel Travelodge Torrelaguna — check-in</p><p class="tl-note">Bus 53 da Puerta del Sol direto à porta do hotel (~30 min). Deixa as malas, descansa.</p></div></div>
+<div class="tl-item"><div class="tl-time">16h15</div><div class="tl-dot-col"><div class="tl-dot d-museum"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Banco de Espanha — Museu <span class="badge bdg-warn">reserva obrigatória</span></p><p class="tl-note">Sexta: ABRE 16h00–20h30. Reserva gratuita em bde.es. Edifício deslumbrante.</p></div></div>
+<div class="tl-item"><div class="tl-time">17h15</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Fuente de Cibeles + Plaza Cibeles</p><p class="tl-note">A fonte mais icónica de Madrid — aqui o Real Madrid celebra os títulos. Foto obrigatória.</p></div></div>
+<div class="tl-item"><div class="tl-time">17h30</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Palácio de Cibeles / CentroCentro</p><p class="tl-note">Câmara Municipal com miradouro no topo. Pequena taxa de acesso.</p></div></div>
+<div class="tl-item"><div class="tl-time">18h15</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Bus C03 (gratuito) pela Gran Vía até Nomad</p><p class="tl-note">O C03 percorre toda a Gran Vía. Desce no número 78, junto à Plaza España. ~15 min.</p></div></div>
+<div class="tl-item"><div class="tl-time">18h30</div><div class="tl-dot-col"><div class="tl-dot d-museum"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Nomad Museo Inmersivo — Gran Vía 78 <span class="badge bdg-warn">reserva prévia</span></p><p class="tl-note">Sexta: 11h–21h, última entrada 20h. 18€/adulto. Exposição atual: De Monet a Kandinsky. Duração ~45–60 min. Compra bilhete com hora marcada em nomadmuseo.es.</p></div></div>
+<div class="tl-item"><div class="tl-time">19h30</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Metro Plaza España → Atocha → Reina Sofía</p><p class="tl-note">L3 ou L10 até Sol, depois L1 até Atocha Renfe. ~20 min. Saída Museo Reina Sofía.</p></div></div>
+<div class="tl-item"><div class="tl-time">19h50</div><div class="tl-dot-col"><div class="tl-dot d-museum"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Museo Reina Sofía <span class="badge bdg-free">entrada livre Sex</span></p><p class="tl-note">Sexta: abre até 21h, última entrada 20h30. Vê o Guernica de Picasso + Dalí + Miró. ~1h.</p></div></div>
+<div class="tl-item"><div class="tl-time">21h00</div><div class="tl-dot-col"><div class="tl-dot d-food"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Frankie Smash Ponzano — jantar</p><p class="tl-note">Metro Atocha → Alonso Martínez (~20 min) + 5 min a pé. Frankie Smash: abre até meia-noite às Sex. Reserva mesa com antecedência!</p></div></div>
+</div>
+
+<!-- ====== DAY 2 ====== -->
+<div id="p1" class="panel">
+<div class="day-hdr">
+  <p class="day-label">Dia 2 · Sábado, 23 de maio</p>
+  <h2 class="day-name">El Capricho + Bernabéu + Palácio Real + Templo de Debod</h2>
+  <p class="day-desc">Real Madrid joga às 21h00. O Bernabéu tem de ser feito de manhã. Dia de estádio + monumentos históricos.</p>
+</div>
+
+<div class="alert alert-w"><strong>Jogo às 21h00!</strong><p>Tour Bernabéu em dias de jogo fecha ~5h30 antes → ~15h30. Entrando às 11h30 estás dentro da margem. Compra bilhetes com muita antecedência — esgota!</p></div>
+
+<div class="tl-item"><div class="tl-time">09h00</div><div class="tl-dot-col"><div class="tl-dot d-free"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Jardín de El Capricho <span class="badge bdg-free">gratuito</span></p><p class="tl-note">Só abre Sáb/Dom e feriados. Abr–Set: 9h–21h. Bus desde o hotel ~20 min. Jardim histórico do séc. XVIII.</p></div></div>
+<div class="tl-item"><div class="tl-time">10h30</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Partir para o Bernabéu</p><p class="tl-note">Metro ~40 min desde a zona do Capricho. Linha 5 ou 7.</p></div></div>
+<div class="tl-item"><div class="tl-time">11h30</div><div class="tl-dot-col"><div class="tl-dot d-stadium"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Tour Santiago Bernabéu + Museu <span class="badge bdg-warn">compra urgente!</span></p><p class="tl-note">Jogo hoje às 21h — esgota rapidamente. Compra em bernabeu.realmadrid.com. Visita ~1h30.</p></div></div>
+<div class="tl-item"><div class="tl-time">13h00</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Loja oficial Real Madrid + exterior</p><p class="tl-note">Souvenirs e equipamentos oficiais. Fotos do exterior do novo Bernabéu renovado.</p></div></div>
+<div class="tl-item"><div class="tl-time">13h15</div><div class="tl-dot-col"><div class="tl-dot d-food"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Starbucks Bernabéu Reserve</p><p class="tl-note">Dentro do estádio. Sobe ao 2.º andar para ver o relvado. Canecas exclusivas Bernabéu.</p></div></div>
+<div class="tl-item"><div class="tl-time">14h00</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Paseo de la Castellana, 67 — La Casa de Papel</p><p class="tl-note">~15 min a pé para sul. Exterior do "Banco de Espanha" da série. Foto obrigatória.</p></div></div>
+<div class="tl-item"><div class="tl-time">14h30</div><div class="tl-dot-col"><div class="tl-dot d-food"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Almoço em Chamberí</p><p class="tl-note">Zona com ótimas opções. Relaxa — tens ~2 horas antes do Palácio Real. Podes explorar Malasaña ou descansar.</p></div></div>
+<div class="tl-item"><div class="tl-time">16h30</div><div class="tl-dot-col"><div class="tl-dot d-museum"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Palácio Real <span class="badge bdg-warn">compra online</span></p><p class="tl-note">Horário de verão (maio): 10h–20h, última entrada 19h. Entrada às 16h30 = 2h30 confortáveis. Compra em patrimonionacional.es.</p></div></div>
+<div class="tl-item"><div class="tl-time">17h45</div><div class="tl-dot-col"><div class="tl-dot d-free"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Catedral de la Almudena <span class="badge bdg-free">gratuito</span></p><p class="tl-note">Mesmo ao lado do Palácio Real. Interior neo-gótico colorido. Fecha 20h30.</p></div></div>
+<div class="tl-item"><div class="tl-time">18h15</div><div class="tl-dot-col"><div class="tl-dot d-free"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Jardines de Sabatini <span class="badge bdg-free">gratuito</span></p><p class="tl-note">Jardins formais do séc. XVIII atrás do palácio. Vista bonita para o Palácio Real.</p></div></div>
+<div class="tl-item"><div class="tl-time">18h45</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Plaza de España</p><p class="tl-note">5 min a pé. Monumento a Cervantes. Ligação direta ao Templo de Debod.</p></div></div>
+<div class="tl-item"><div class="tl-time">19h30</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Templo de Debod — pôr do sol</p><p class="tl-note">Chega cedo para bom lugar! Pôr do sol ~21h10. Interior fecha 20h (última entrada 19h30). Fica na colina para o espetáculo.</p></div></div>
+<div class="tl-item"><div class="tl-time">21h00+</div><div class="tl-dot-col"><div class="tl-dot d-food"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Jantar leve / regressar ao hotel</p><p class="tl-note">Jogo do Real Madrid às 21h — a cidade vai estar eletrizante. Qualquer restaurante perto da Plaza España ou Malasaña.</p></div></div>
+</div>
+
+<!-- ====== DAY 3 ====== -->
+<div id="p2" class="panel">
+<div class="day-hdr">
+  <p class="day-label">Dia 3 · Domingo, 24 de maio</p>
+  <h2 class="day-name">Cerralbo + Atlético de Madrid + Retiro + Prado + 99 Cheesecake</h2>
+  <p class="day-desc">O dia mais cultural. Museu de manhã, estádio a seguir, retiro + prado de tarde. Prado gratuito das 17h às 19h!</p>
+</div>
+
+<div class="alert alert-w"><strong>Atenção timing:</strong><p>Após o tour do Atlético (~14h30), ainda tens ~35 min de metro até à Gran Vía. O Five Guys fica realista perto das 15h15, não às 14h30.</p></div>
+<div class="alert alert-s"><strong>Prado gratuito ao domingo!</strong><p>Das 17h00 às 19h00 — entrada totalmente gratuita. Última entrada 18h30. Não chegues antes das 17h para aproveitar.</p></div>
+
+<div class="tl-item"><div class="tl-time">09h30</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Sair do hotel para o Cerralbo</p><p class="tl-note">Metro até Plaza España / Ventura Rodríguez ~35 min.</p></div></div>
+<div class="tl-item"><div class="tl-time">10h15</div><div class="tl-dot-col"><div class="tl-dot d-free"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Museu Cerralbo <span class="badge bdg-free">gratuito</span></p><p class="tl-note">Dom: 10h–15h. C. Ventura Rodríguez 17. Palácio histórico com arte e mobiliário do séc. XIX. Visita ~1h.</p></div></div>
+<div class="tl-item"><div class="tl-time">11h15</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Metro para o Estádio do Atlético</p><p class="tl-note">Linha 7 (Estadio Olímpico) ou Linha 5. ~35–40 min.</p></div></div>
+<div class="tl-item"><div class="tl-time">12h00</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Chegar ao Metropolitano</p><p class="tl-note">Tempo para explorar os arredores e fazer check-in para o tour.</p></div></div>
+<div class="tl-item"><div class="tl-time">12h30</div><div class="tl-dot-col"><div class="tl-dot d-stadium"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Tour Riyadh Air Metropolitano — Atlético <span class="badge bdg-warn">9€ / dom</span></p><p class="tl-note">Disponível ao Domingo — confirmado no site. Compra em atleticodemadrid.com. Tour guiado + museu. ~2h.</p></div></div>
+<div class="tl-item"><div class="tl-time">14h30</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Metro para a Gran Vía</p><p class="tl-note">~35 min de viagem. Chega ao Five Guys perto das 15h10–15h15.</p></div></div>
+<div class="tl-item"><div class="tl-time">15h15</div><div class="tl-dot-col"><div class="tl-dot d-food"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Five Guys Gran Vía — almoço</p><p class="tl-note">Gran Vía 44. Aberto ao Domingo a partir das 11h. Burger totalmente personalizado.</p></div></div>
+<div class="tl-item"><div class="tl-time">16h00</div><div class="tl-dot-col"><div class="tl-dot d-free"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Parque del Retiro <span class="badge bdg-free">gratuito</span></p><p class="tl-note">Entra pela Puerta de la Independencia, mesmo ao lado da Puerta de Alcalá.</p></div></div>
+<div class="tl-item"><div class="tl-time">16h10</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Puerta de Alcalá</p><p class="tl-note">Foto à entrada do Retiro. Arco triunfal pós-romano mais antigo da Europa.</p></div></div>
+<div class="tl-item"><div class="tl-time">16h30</div><div class="tl-dot-col"><div class="tl-dot d-free"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Palácio de Cristal <span class="badge bdg-free">gratuito</span></p><p class="tl-note">Dentro do Retiro, ~15 min a pé. Pavilhão de ferro e vidro de 1887. Absolutamente deslumbrante.</p></div></div>
+<div class="tl-item"><div class="tl-time">17h00</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Caminhar para o Prado (~12 min)</p><p class="tl-note">Sai pelo sul do Retiro em direção ao Paseo del Prado.</p></div></div>
+<div class="tl-item"><div class="tl-time">17h10</div><div class="tl-dot-col"><div class="tl-dot d-free"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Museo del Prado <span class="badge bdg-free">gratuito dom 17h–19h</span></p><p class="tl-note">Última entrada 18h30. Fecha às 19h00. Foca em: Las Meninas (Velázquez), As Majas (Goya), Saturno a Devorar o Filho. ~1h45.</p></div></div>
+<div class="tl-item"><div class="tl-time">19h00</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Sair do Prado → Malasaña</p><p class="tl-note">Metro Atocha → Gran Vía → Tribunal. Ou a pé ~25 min. 99 Cheesecake fica perto de Tribunal.</p></div></div>
+<div class="tl-item"><div class="tl-time">19h30</div><div class="tl-dot-col"><div class="tl-dot d-food"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">99 Cheesecake — Malasaña <span class="badge bdg-warn">fecha 2ª feira!</span></p><p class="tl-note">C. de Don Felipe 4. Dom: abre 12h, fecha 22h. Menos de 2€ a fatia. Fila possível mas rápida.</p></div></div>
+<div class="tl-item"><div class="tl-time">20h15</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Passeio por Malasaña (opcional)</p><p class="tl-note">Bairro animado com bares e lojas. Ou regressa ao hotel para descansar.</p></div></div>
+</div>
+
+<!-- ====== DAY 4 ====== -->
+<div id="p3" class="panel">
+<div class="day-hdr">
+  <p class="day-label">Dia 4 · Segunda, 25 de maio</p>
+  <h2 class="day-name">Manhã leve + aeroporto</h2>
+  <p class="day-desc">Dia de partida. Sem visitas importantes — margem, compras e tranquilidade para o voo das 19h40.</p>
+</div>
+
+<div class="alert alert-i"><p>99 Cheesecake fecha às Segundas — mas já fizeste ontem. Banco de Espanha também não abre hoje. Este dia é mesmo para ser leve e sem stress.</p></div>
+
+<div class="tl-item"><div class="tl-time">09h30</div><div class="tl-dot-col"><div class="tl-dot d-hotel"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Check-out / deixar malas no hotel</p><p class="tl-note">Pede à receção para guardar a bagagem até partires.</p></div></div>
+<div class="tl-item"><div class="tl-time">10h30</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Gran Vía / Callao — último passeio</p><p class="tl-note">Compras de última hora, souvenirs ou simplesmente desfrutar da cidade uma última vez.</p></div></div>
+<div class="tl-item"><div class="tl-time">11h30</div><div class="tl-dot-col"><div class="tl-dot d-outdoor"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Repetir algo que ficou por fazer (opcional)</p><p class="tl-note">Rooftop El Corte Inglés, Puerta del Sol, ou simplesmente sentar num café a descansar.</p></div></div>
+<div class="tl-item"><div class="tl-time">12h30</div><div class="tl-dot-col"><div class="tl-dot d-food"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Almoço simples</p><p class="tl-note">Qualquer restaurante perto da Gran Vía ou Callao. Sem pressa.</p></div></div>
+<div class="tl-item"><div class="tl-time">14h00</div><div class="tl-dot-col"><div class="tl-dot d-hotel"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Regressar ao hotel para as malas</p><p class="tl-note">Bus 53 da Sol ao hotel (~30 min).</p></div></div>
+<div class="tl-item"><div class="tl-time">15h30</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Partir para o aeroporto T4</p><p class="tl-note">Metro até Nuevos Ministerios (~20 min), depois Linha 8 até T4 (~25 min). Total ~50 min.</p></div></div>
+<div class="tl-item"><div class="tl-time">16h30</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">Chegar ao T4 — check-in + segurança</p><p class="tl-note">Mais de 3 horas antes do voo. Sem stress, tempo de sobra.</p></div></div>
+<div class="tl-item"><div class="tl-time">19h40</div><div class="tl-dot-col"><div class="tl-dot d-transport"></div><div class="tl-line"></div></div><div class="tl-body"><p class="tl-act">✈️ Voo IB1153 Madrid → Porto</p><p class="tl-note">Chegada ao Porto às 20h00. Boa viagem!</p></div></div>
+</div>
+
+<!-- ====== TICKETS & TIPS ====== -->
+<div id="p4" class="panel">
+<div class="day-hdr">
+  <p class="day-label">Antes de partir</p>
+  <h2 class="day-name">Bilhetes, transportes e refeições</h2>
+</div>
+
+<p class="sec-label">Comprar agora — por ordem de urgência</p>
+<div class="grid2">
+  <div class="card"><p class="card-name">Bernabéu Tour <span class="badge bdg-warn">urgente</span></p><p class="card-det">bernabeu.realmadrid.com — dia de jogo esgota muito depressa. Sábado 23, manhã. Verifica horários match day.</p></div>
+  <div class="card"><p class="card-name">Nomad Museo Inmersivo <span class="badge bdg-blue">obrigatório</span></p><p class="card-det">nomadmuseo.es — reserva hora marcada. Sexta 22, ~18h30. 18€/adulto. Gran Vía 78.</p></div>
+  <div class="card"><p class="card-name">Banco de Espanha <span class="badge bdg-blue">obrigatório</span></p><p class="card-det">bde.es — reserva gratuita mas necessária. Sexta 22, a partir das 16h.</p></div>
+  <div class="card"><p class="card-name">Atlético Madrid Tour <span class="badge bdg-ok">disponível</span></p><p class="card-det">atleticodemadrid.com — 9€. Domingo 24, sessão das 12h30.</p></div>
+  <div class="card"><p class="card-name">Palácio Real <span class="badge bdg-ok">recomendado</span></p><p class="card-det">patrimonionacional.es — evita filas. Sábado 23, entrada às 16h30.</p></div>
+  <div class="card"><p class="card-name">Frankie Smash <span class="badge bdg-ok">recomendado</span></p><p class="card-det">Reserva mesa para a Sexta 22, ~21h15. Muito popular.</p></div>
+</div>
+
+<p class="sec-label">Entradas gratuitas — sem reserva necessária</p>
+<div class="grid3">
+  <div class="card"><p class="card-name">Rooftop El Corte Inglés</p><p class="card-det">Callao, 9.º andar. Entra e compra uma bebida.</p></div>
+  <div class="card"><p class="card-name">Reina Sofía</p><p class="card-det">Sexta até 21h — entrada sempre gratuita às Sextas!</p></div>
+  <div class="card"><p class="card-name">Museo del Prado</p><p class="card-det">Domingo 17h–19h gratuito. Última entrada 18h30.</p></div>
+  <div class="card"><p class="card-name">Museu Cerralbo</p><p class="card-det">Domingo 10h–15h. Sempre gratuito.</p></div>
+  <div class="card"><p class="card-name">Tienda de los Deseos</p><p class="card-det">Gratuito. C. de la Escalinata 7.</p></div>
+  <div class="card"><p class="card-name">Jardín de El Capricho</p><p class="card-det">Gratuito. Sáb 23, 9h. Bus desde o hotel.</p></div>
+</div>
+
+<div class="divider"></div>
+<p class="sec-label">Transportes desde o Travelodge Torrelaguna</p>
+<div class="grid2">
+  <div class="card"><p class="card-name">Bus 53</p><p class="card-det">Para da porta do hotel → Puerta del Sol. ~30 min. Bilhete normal.</p></div>
+  <div class="card"><p class="card-name">Linhas 001 · 002 · C03</p><p class="card-det">Gratuitas no centro. Percorrem Gran Vía e zonas centrais. Pede bilhete ao motorista.</p></div>
+  <div class="card"><p class="card-name">Metro (10 min a pé)</p><p class="card-det">Linha 4 para o centro. Para o aeroporto: Nuevos Ministerios + Linha 8 → T4 (~25 min).</p></div>
+  <div class="card"><p class="card-name">Aeroporto — dia 25</p><p class="card-det">Sai às 15h30. Chega ao T4 às ~16h30. Mais de 3h antes do voo das 19h40.</p></div>
+</div>
+
+<div class="divider"></div>
+<p class="sec-label">Plano de refeições</p>
+<div class="grid2">
+  <div class="card"><p class="card-name">Sex 22 — Jantar</p><p class="card-det">Frankie Smash Ponzano. ~21h15. Abre até meia-noite. Reserva!</p></div>
+  <div class="card"><p class="card-name">Sáb 23 — Almoço</p><p class="card-det">Zona Chamberí (após Castellana 67). 2h de margem. Escolhe no momento.</p></div>
+  <div class="card"><p class="card-name">Sáb 23 — Jantar</p><p class="card-det">Perto da Plaza España ou Malasaña. Jogo RM às 21h — ambiente incrível!</p></div>
+  <div class="card"><p class="card-name">Dom 24 — Almoço</p><p class="card-det">Five Guys Gran Vía, 44. ~15h15 (após metro do Metropolitano).</p></div>
+  <div class="card"><p class="card-name">Dom 24 — Sobremesa</p><p class="card-det">99 Cheesecake Malasaña. Obrigatório hoje — fecha à Segunda!</p></div>
+  <div class="card"><p class="card-name">Seg 25 — Almoço</p><p class="card-det">Qualquer restaurante Gran Vía/Callao. Simples e sem pressa.</p></div>
+</div>
+
+<div class="divider"></div>
+<p style="font-size:11px;color:#aaa;text-align:center;padding:1rem 0">Roteiro gerado com Claude · Verificado e corrigido em detalhe · maio 2026</p>
+</div>
+
+</div>
+
+<script>
+function sw(n){
+  document.querySelectorAll('.panel').forEach((p,i)=>{p.className='panel'+(i===n?' on':'')});
+  document.querySelectorAll('.tab').forEach((t,i)=>{t.className='tab'+(i===n?' on':'')});
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+</script>
+</body>
+</html>
