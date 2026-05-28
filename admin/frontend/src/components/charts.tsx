@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -16,8 +16,57 @@ import {
   TrendingUp,
   Zap,
 } from 'lucide-react';
-import { ChartMachine } from '../lib/api';
+import { ChartMachine, ErrorsTimelinePoint, HistoryPoint } from '../lib/api';
 import { useMachines } from '../lib/useMachines';
+import { useMachineHistory } from '../lib/useMachineHistory';
+import { usePredictions } from '../lib/usePredictions';
+import { useEnergyToday } from '../lib/useEnergyToday';
+import { useSeverityTimeline } from '../lib/useSeverityTimeline';
+import { useErrorsTimeline } from '../lib/useErrorsTimeline';
+
+const FALLBACK_COLORS = ['#0f7ee7', '#38a4e8', '#d7bf42', '#10b981', '#8b5cf6', '#f59e0b'];
+
+function pointsToSeries(
+  machines: { label: string; color: string; points: HistoryPoint[] }[],
+  bucketCount = 12,
+): { series: Series[]; labels: string[] } {
+  const withData = machines.filter((m) => m.points.length > 0);
+  if (withData.length === 0) {
+    return { series: machines.map((m) => ({ label: m.label, color: m.color, values: [] })), labels: [] };
+  }
+  const allMs = withData.flatMap((m) => m.points.map((p) => Date.parse(p.time)));
+  const minMs = Math.min(...allMs);
+  const maxMs = Math.max(...allMs);
+  const slotMs = (maxMs - minMs) / Math.max(bucketCount - 1, 1);
+  const slots = Array.from({ length: bucketCount }, (_, i) => minMs + i * slotMs);
+  const labels = slots.map((t) => new Date(t).toISOString().slice(11, 16));
+  const series = machines.map((m) => ({
+    label: m.label,
+    color: m.color,
+    values: slots.map((slotT) => {
+      if (m.points.length === 0) return 0;
+      const closest = m.points.reduce((best, p) =>
+        Math.abs(Date.parse(p.time) - slotT) < Math.abs(Date.parse(best.time) - slotT) ? p : best,
+      );
+      return Math.abs(Date.parse(closest.time) - slotT) <= slotMs ? closest.value : 0;
+    }),
+  }));
+  return { series, labels };
+}
+
+function MachineHistoryCollector({
+  machineId,
+  onData,
+}: {
+  machineId: string;
+  onData: (id: string, pts: HistoryPoint[]) => void;
+}) {
+  const { points } = useMachineHistory(machineId, 'energy', 60);
+  useEffect(() => {
+    onData(machineId, points);
+  }, [machineId, points, onData]);
+  return null;
+}
 
 type Series = {
   label: string;
@@ -320,30 +369,31 @@ export function InteractiveLineChart({
   );
 }
 
-export function ErrorBarsChart({ rows }: { rows: ChartMachine[] }) {
-  const [hovered, setHovered] = useState<{ series: string; index: number; value: number } | null>(null);
-  const series = rows.map((machine) => ({
-    label: machine.shortName,
-    color: machine.color,
-    values: machine.errors,
-  }));
+export function ErrorBarsChart({
+  points,
+  colors = {},
+}: {
+  points: ErrorsTimelinePoint[];
+  colors?: Record<string, string>;
+}) {
+  const [hovered, setHovered] = useState<{ machineId: string; index: number; value: number } | null>(null);
   const width = 1180;
   const height = 280;
   const max = 420;
-  const groupWidth = (width - 84) / times.length;
+  const groupWidth = points.length > 0 ? (width - 84) / points.length : 0;
+  const labels = points.map((p) => p.time.slice(11, 16));
 
   return (
     <div className="relative h-[280px] w-full">
       {hovered && (
         <div className="absolute right-4 top-3 z-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] shadow-lg">
-          <div className="font-semibold text-slate-900">{hovered.series}</div>
-          <div className="text-slate-500">{times[hovered.index]} · código {hovered.value}</div>
+          <div className="font-semibold text-slate-900">{hovered.machineId}</div>
+          <div className="text-slate-500">{labels[hovered.index]} · código {hovered.value}</div>
         </div>
       )}
       <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" role="img" aria-label="Códigos de erro por máquina">
         {[0, 100, 200, 300, 400].map((tick) => {
           const y = toPoints([tick], 0, max, width, height)[0].y;
-
           return (
             <g key={tick}>
               <line x1="42" x2={width - 26} y1={y} y2={y} stroke="#e2e8f0" strokeDasharray="4 4" />
@@ -351,32 +401,35 @@ export function ErrorBarsChart({ rows }: { rows: ChartMachine[] }) {
             </g>
           );
         })}
-        {times.map((label, index) => {
-          const x = 42 + (index / (times.length - 1)) * (width - 84);
+        {labels.map((label, index) => {
+          const x = 42 + (index / Math.max(labels.length - 1, 1)) * (width - 84);
           return (
-            <g key={label}>
+            <g key={`${label}-${index}`}>
               <line x1={x} x2={x} y1="28" y2={height - 34} stroke="#eef2f7" />
-              {index % 2 === 0 && <text x={x - 17} y={height - 8} className="fill-slate-500 text-[11px]">{label}</text>}
+              {index % 2 === 0 && (
+                <text x={x - 17} y={height - 8} className="fill-slate-500 text-[11px]">{label}</text>
+              )}
             </g>
           );
         })}
-        {series.map((item, seriesIndex) =>
-          item.values.map((value, index) => {
+        {points.map((point, index) =>
+          point.by_machine.map((entry, machineIndex) => {
+            const value = entry.error_code;
+            const color = colors[entry.machine_id] ?? FALLBACK_COLORS[machineIndex % FALLBACK_COLORS.length];
             const barHeight = ((height - 62) * value) / max;
-            const x = 42 + index * groupWidth + 13 + seriesIndex * 12;
+            const x = 42 + index * groupWidth + 13 + machineIndex * 12;
             const y = height - 34 - barHeight;
-
             return (
               <rect
-                key={`${item.label}-${index}`}
+                key={`${index}-${entry.machine_id}`}
                 x={x}
                 y={y}
                 width="5"
                 height={barHeight}
                 rx="2"
-                fill={item.color}
+                fill={color}
                 opacity={value === 0 ? 0 : 0.9}
-                onMouseEnter={() => value > 0 && setHovered({ series: item.label, index, value })}
+                onMouseEnter={() => value > 0 && setHovered({ machineId: entry.machine_id, index, value })}
                 onMouseLeave={() => setHovered(null)}
               />
             );
@@ -489,10 +542,17 @@ export function YarnRemainingChart({ rows }: { rows: ChartMachine[] }) {
   );
 }
 
-export function SeverityOverTimeChart() {
+export function SeverityOverTimeChart({
+  series = severitySeries,
+  labels,
+}: {
+  series?: Series[];
+  labels?: string[];
+} = {}) {
   return (
     <InteractiveLineChart
-      series={severitySeries}
+      series={series}
+      labels={labels}
       yTicks={[0, 1, 2, 3, 4]}
       height={260}
     />
@@ -504,15 +564,18 @@ export function PredictionPanel({ rows }: { rows: ChartMachine[] }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const machine = rows[selectedIndex] ?? rows[0];
 
+  const { points: historyPoints } = useMachineHistory(machine?.id, 'energy', 60);
+  const { points: predPoints } = usePredictions(machine?.id, 60);
+
   if (!machine) return <div className="flex h-[200px] items-center justify-center text-[14px] text-slate-400">A carregar dados…</div>;
   const width = 1180;
   const height = 330;
   const labels = ['-60m', '-52m', '-44m', '-36m', '-28m', '-20m', '-12m', '-4m', '+4m', '+12m', '+20m', '+28m'];
-  const real = machine.history;
-  const forecast = machine.forecast;
+  const real = historyPoints.length > 0 ? historyPoints.map((p) => p.value) : machine.history;
+  const forecast = predPoints.length > 0 ? predPoints.map((p) => p.value) : machine.forecast;
   const forecastStart = real.length - 1;
-  const minBand = forecast.map((value, index) => value - 0.8 + index * 0.02);
-  const maxBand = forecast.map((value, index) => value + 0.8 + index * 0.02);
+  const minBand = predPoints.length > 0 ? predPoints.map((p) => p.min) : machine.forecastMin;
+  const maxBand = predPoints.length > 0 ? predPoints.map((p) => p.max) : machine.forecastMax;
   const realPoints = toPoints(real, 0, 16, width, height, 46, 28);
   const forecastPoints = toPoints(forecast, 0, 16, width, height, 46 + ((forecastStart / (real.length + forecast.length - 2)) * (width - 92)), 28);
   const minPoints = toPoints(minBand, 0, 16, width, height, 46 + ((forecastStart / (real.length + forecast.length - 2)) * (width - 92)), 28);
@@ -621,6 +684,7 @@ function KpiMini({
 
 export function DashboardOverview() {
   const { machines: rows, loading } = useMachines();
+  const { data: energyData } = useEnergyToday();
 
   const total = rows.length;
   const running = rows.filter((m) => m.status === 'Running').length;
@@ -646,7 +710,15 @@ export function DashboardOverview() {
   return (
     <section className="mx-auto max-w-[1500px]">
       <div className="grid grid-cols-4 gap-4">
-        <KpiCard label="Energia consumida (hoje)" value="—" detail="Endpoint de agregação ainda não disponível" icon={<span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-100 text-[#0f7ee7]"><Zap size={20} /></span>} badge="em breve" />
+        <KpiCard
+          label="Energia consumida (hoje)"
+          value={energyData ? `${energyData.total_kwh.toFixed(1)} kWh` : '—'}
+          detail={energyData
+            ? `${energyData.by_machine.length} máquinas · média ${(energyData.total_kwh / energyData.by_machine.length).toFixed(1)} kWh`
+            : 'A carregar dados…'}
+          icon={<span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-100 text-[#0f7ee7]"><Zap size={20} /></span>}
+          badge={energyData ? undefined : 'em breve'}
+        />
         <KpiCard
           label="Estado da fábrica"
           value={loading ? '…' : `${running} / ${total} operacionais`}
@@ -696,12 +768,19 @@ export function DashboardOverview() {
 export function MachinesView() {
   const { machines: rows, loading } = useMachines();
   const [filter, setFilter] = useState<'Todos' | 'Running' | 'Error' | 'Offline'>('Todos');
+  const [historyMap, setHistoryMap] = useState<Record<string, HistoryPoint[]>>({});
   const filteredRows = filter === 'Todos' ? rows : rows.filter((row) => row.status === filter);
 
   const total = rows.length;
   const totalConsumption = rows.reduce((sum, m) => sum + m.consumption, 0);
-  // TODO FASE 2: substituir por dados reais de /api/<id>/history
-  const consumedSeries: Series[] = rows.map((m) => ({ label: m.shortName, color: m.color, values: m.consumed }));
+
+  const handleHistoryData = useCallback((id: string, pts: HistoryPoint[]) => {
+    setHistoryMap((prev) => (prev[id] === pts ? prev : { ...prev, [id]: pts }));
+  }, []);
+
+  const { series: consumedSeries, labels: consumedLabels } = pointsToSeries(
+    rows.map((m) => ({ label: m.shortName, color: m.color, points: historyMap[m.id] ?? [] })),
+  );
 
   return (
     <section className="mx-auto max-w-[1500px]">
@@ -744,9 +823,12 @@ export function MachinesView() {
         <YarnRemainingChart rows={rows} />
       </Panel>
 
+      {rows.map((m) => (
+        <MachineHistoryCollector key={m.id} machineId={m.id} onData={handleHistoryData} />
+      ))}
+
       <Panel className="mt-6" title="Energia consumida por máquina" subtitle="Consumo por agente IoT nas últimas leituras agregadas.">
-        {/* TODO FASE 2: substituir por dados reais de /api/<id>/history */}
-        <InteractiveLineChart series={consumedSeries} />
+        <InteractiveLineChart series={consumedSeries} labels={consumedLabels} />
       </Panel>
 
       <Panel className="mt-6" title="Condições ambientais por linha" subtitle="Leituras agregadas dos sensores de temperatura e humidade.">
@@ -858,6 +940,8 @@ export function ForecastView() {
 export function AlertsView() {
   const { machines: rows } = useMachines();
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
+  const { points: severityPoints } = useSeverityTimeline(60, 5);
+  const { points: errorsPoints } = useErrorsTimeline(60, 5);
 
   const baseAlerts: AlertRow[] = rows
     .filter((m) => m.error !== '-')
@@ -882,6 +966,13 @@ export function AlertsView() {
     setResolvedIds((prev) => new Set([...prev, id]));
   };
 
+  const colorMap = Object.fromEntries(rows.map((m) => [m.id, m.color]));
+  const severitySeries: Series[] = [
+    { label: 'Crítico', color: '#ef4444', values: severityPoints.map((p) => p.error) },
+    { label: 'Aviso',   color: '#f59e0b', values: severityPoints.map((p) => p.warning) },
+  ];
+  const severityLabels = severityPoints.map((p) => p.time.slice(11, 16));
+
   return (
     <section className="mx-auto max-w-[1500px]">
       <PageIntro
@@ -898,12 +989,11 @@ export function AlertsView() {
       </div>
 
       <Panel className="mt-6" title="Alertas por severidade ao longo do tempo" subtitle="Evolução das ocorrências críticas, avisos e informativas por intervalo.">
-        <SeverityOverTimeChart />
+        <SeverityOverTimeChart series={severitySeries} labels={severityLabels} />
       </Panel>
 
       <Panel className="mt-6" title="Códigos de erro por máquina" subtitle="Eventos NGSI agregados por intervalo e por máquina.">
-        {/* TODO FASE 2: substituir por dados reais de /api/<id>/history */}
-        <ErrorBarsChart rows={rows} />
+        <ErrorBarsChart points={errorsPoints} colors={colorMap} />
       </Panel>
 
       <Panel className="mt-6" title="Histórico de alertas" subtitle="Eventos gerados pelas regras de subscrição do Orion Context Broker.">
