@@ -1,5 +1,11 @@
 const API_URL = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
 
+let _token: string | null = null;
+export function setApiToken(t: string | null) { _token = t; }
+function authHeader(): HeadersInit {
+  return _token ? { Authorization: `Bearer ${_token}` } : {};
+}
+
 type BackendMachine = {
   id: string;
   name: string;
@@ -12,9 +18,13 @@ type BackendMachine = {
   energy_consumed: number;
   thread_remaining: number;
   online: boolean;
+  paused: boolean;
+  water_consumption: number | null;
+  chemical_level: number | null;
+  compressed_air: number | null;
 };
 
-export type MachineStatus = 'running' | 'error' | 'offline';
+export type MachineStatus = 'running' | 'error' | 'offline' | 'stopped';
 
 export type MachineItem = {
   id: string;
@@ -25,6 +35,10 @@ export type MachineItem = {
   consumption: number;
   lastError: { code: string; message: string } | null;
   lastUpdate: string;
+  paused: boolean;
+  waterConsumption: number | null;
+  chemicalLevel: number | null;
+  compressedAir: number | null;
 };
 
 export type KpiItem = {
@@ -69,7 +83,9 @@ function adaptMachine(m: BackendMachine): MachineItem {
   const shortId = m.id.split(':').pop() ?? m.id;
 
   let status: MachineStatus;
-  if (!m.online || m.status === 'unknown') {
+  if (m.paused || m.status === 'stopped') {
+    status = 'stopped';
+  } else if (!m.online || m.status === 'unknown') {
     status = 'offline';
   } else if (m.status === 'warning' || m.status === 'error') {
     status = 'error';
@@ -81,9 +97,6 @@ function adaptMachine(m: BackendMachine): MachineItem {
     ? Math.max(0, Math.min(100, (m.thread_remaining / m.base_thread) * 100))
     : 0;
 
-  // energy_consumed chega em kWh (base_energy ~5.2 kWh), não dividir por 1000
-  const consumption = m.energy_consumed;
-
   const lastError = m.error_code === 0
     ? null
     : { code: `E-${m.error_code}`, message: m.error_description };
@@ -94,14 +107,18 @@ function adaptMachine(m: BackendMachine): MachineItem {
     line: m.type,
     status,
     yarnRemaining: Math.round(yarnRemaining),
-    consumption,
+    consumption: m.energy_consumed,
     lastError,
     lastUpdate: 'agora',
+    paused: m.paused ?? false,
+    waterConsumption: m.water_consumption ?? null,
+    chemicalLevel: m.chemical_level ?? null,
+    compressedAir: m.compressed_air ?? null,
   };
 }
 
 export async function fetchMachines(): Promise<MachineItem[]> {
-  const res = await fetch(`${API_URL}/api/machines`, { cache: 'no-store' });
+  const res = await fetch(`${API_URL}/api/machines`, { cache: 'no-store', headers: authHeader() });
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const data: BackendMachine[] = await res.json();
   return data.map(adaptMachine);
@@ -156,7 +173,7 @@ export type ChartMachine = {
   type: string;
   line: string;
   color: string;
-  status: 'Running' | 'Error' | 'Offline';
+  status: 'Running' | 'Error' | 'Offline' | 'Stopped';
   yarnRemaining: number;
   consumption: number;
   error: string;
@@ -168,20 +185,25 @@ export type ChartMachine = {
   consumed: number[];
   errors: number[];
   failureProbability: number;
+  paused: boolean;
+  waterConsumption: number | null;
+  chemicalLevel: number | null;
+  compressedAir: number | null;
 };
 
 function toChartMachine(m: MachineItem, index: number): ChartMachine {
-  const statusMap: Record<MachineStatus, 'Running' | 'Error' | 'Offline'> = {
+  const statusMap: Record<MachineStatus, ChartMachine['status']> = {
     running: 'Running',
-    error: 'Error',
+    error:   'Error',
     offline: 'Offline',
+    stopped: 'Stopped',
   };
 
-  // TODO FASE 2: derivar do modelo LSTM real
   const failureProbMap: Record<MachineStatus, number> = {
-    error: 70,
+    error:   70,
     offline: 20,
     running: 10,
+    stopped: 0,
   };
 
   const series = FALLBACK_SERIES[index % FALLBACK_SERIES.length];
@@ -205,6 +227,10 @@ function toChartMachine(m: MachineItem, index: number): ChartMachine {
     consumed: series.consumed,
     errors: series.errors,
     failureProbability: failureProbMap[m.status],
+    paused: m.paused,
+    waterConsumption: m.waterConsumption,
+    chemicalLevel: m.chemicalLevel,
+    compressedAir: m.compressedAir,
   };
 }
 
@@ -220,7 +246,7 @@ export async function fetchHistory(
 ): Promise<HistoryPoint[]> {
   const res = await fetch(
     `${API_URL}/api/machines/${machineId}/history?metric=${metric}&minutes=${minutes}`,
-    { cache: 'no-store' },
+    { cache: 'no-store', headers: authHeader() },
   );
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const data = await res.json();
@@ -233,7 +259,7 @@ export async function fetchPredictions(
 ): Promise<PredictionPoint[]> {
   const res = await fetch(
     `${API_URL}/api/machines/${machineId}/predictions?minutes=${minutes}`,
-    { cache: 'no-store' },
+    { cache: 'no-store', headers: authHeader() },
   );
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const data = await res.json();
@@ -241,7 +267,7 @@ export async function fetchPredictions(
 }
 
 export async function fetchEnergyToday(): Promise<EnergyToday> {
-  const res = await fetch(`${API_URL}/api/kpi/energy-today`, { cache: 'no-store' });
+  const res = await fetch(`${API_URL}/api/kpi/energy-today`, { cache: 'no-store', headers: authHeader() });
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
@@ -252,7 +278,7 @@ export async function fetchSeverityTimeline(
 ): Promise<SeverityPoint[]> {
   const res = await fetch(
     `${API_URL}/api/alerts/severity?minutes=${minutes}&bucket_minutes=${bucketMinutes}`,
-    { cache: 'no-store' },
+    { cache: 'no-store', headers: authHeader() },
   );
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const data = await res.json();
@@ -265,7 +291,7 @@ export async function fetchErrorsTimeline(
 ): Promise<ErrorsTimelinePoint[]> {
   const res = await fetch(
     `${API_URL}/api/alerts/errors-timeline?minutes=${minutes}&bucket_minutes=${bucketMinutes}`,
-    { cache: 'no-store' },
+    { cache: 'no-store', headers: authHeader() },
   );
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const data = await res.json();
@@ -279,7 +305,7 @@ export function computeKpis(machines: MachineItem[]): KpiItem[] {
   const worstMachine = machines
     .filter((m) => m.status !== 'running')
     .sort((a, b) => {
-      const rank: Record<MachineStatus, number> = { error: 2, offline: 1, running: 0 };
+      const rank: Record<MachineStatus, number> = { error: 2, offline: 1, running: 0, stopped: 0 };
       return rank[b.status] - rank[a.status];
     })[0] ?? null;
 
@@ -320,4 +346,13 @@ export function computeKpis(machines: MachineItem[]): KpiItem[] {
       badge: { text: 'em breve', style: 'purple' },
     },
   ];
+}
+
+export async function machineControl(machineId: string, action: 'start' | 'stop'): Promise<void> {
+  const res = await fetch(`${API_URL}/api/machines/${machineId}/control`, {
+    method: 'POST',
+    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+  if (!res.ok) throw new Error(`Control error ${res.status}`);
 }

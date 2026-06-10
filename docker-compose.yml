@@ -137,13 +137,14 @@ services:
       - ORION_HOST=orion
       - ORION_PORT=1026
       - MACHINES_FILE=/config/machines.json
+      - USERS_FILE=/config/users.json
       - CRATE_HOST=crate
     volumes:
       - machines_config:/config
     networks:
       - fiware
     ports:
-      - "5000:5000"
+      - "5001:5000"
 
   # --- Frontend Admin ---
   frontend:
@@ -155,10 +156,10 @@ services:
     depends_on:
       - backend
     ports:
-      - "3001:3001"
+      - "3005:3001"
     environment:
       - API_URL=http://backend:5000
-      - NEXT_PUBLIC_API_URL=http://localhost:5000
+      - NEXT_PUBLIC_API_URL=http://localhost:5001
     volumes:
       - ./admin/frontend:/app
       - /app/node_modules

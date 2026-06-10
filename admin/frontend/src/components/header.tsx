@@ -1,90 +1,93 @@
 'use client'
 
-import { FormEvent, useState } from 'react';
+import { useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Bell, Plus, Search, Sparkles, Sun, X } from 'lucide-react';
+import { Plus, Sparkles, Sun, Moon, X } from 'lucide-react';
+import { useAuth } from '../lib/auth';
+import { useTheme } from '../lib/theme';
+import { useLang } from '../lib/lang';
+import { NotificationsButton } from './notifications-button';
 
-export default function Header(){
+export default function Header() {
     const pathname = usePathname();
+    const { user, isAdmin } = useAuth();
+    const { theme, toggle: toggleTheme } = useTheme();
+    const { lang, toggle: toggleLang, t } = useLang();
     const [isAddMachineOpen, setIsAddMachineOpen] = useState(false);
-    
-    const getTitle = () => {
-        if (pathname === '/') return 'Dashboard Overview';
-        if (pathname === '/maquinas') return 'Gestão de Máquinas';
-        if (pathname === '/previsao') return 'Previsão com IA';
-        if (pathname === '/alertas') return 'Centro de Alertas';
-        return pathname.replace('/', '').charAt(0).toUpperCase() + pathname.slice(2);
-    };
 
-    const getSubtitle = () => {
-        if (pathname === '/maquinas') return 'Agentes IoT registados no Orion Context Broker';
-        if (pathname === '/previsao') return 'Modelo LSTM · consumo e ocorrências nas próximas horas';
-        if (pathname === '/alertas') return 'Ocorrências críticas, em manutenção e resolvidas';
-        return 'Monitorização preditiva · 3 máquinas · Orion Context Broker';
-    };
+    const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : '??';
 
-    const closeAddMachine = () => {
-        setIsAddMachineOpen(false);
-    };
+    const [title, subtitle] = t.header[pathname] ?? [
+        pathname.replace('/', '').charAt(0).toUpperCase() + pathname.slice(2),
+        '',
+    ];
 
-    const handleProvisionAgent = (event: FormEvent<HTMLFormElement>) => {
+    const closeAddMachine = () => setIsAddMachineOpen(false);
+
+    const handleProvisionAgent = (event: React.SyntheticEvent) => {
         event.preventDefault();
         closeAddMachine();
     };
 
     return (
         <>
-            <header className='fixed top-0 right-0 left-64 h-18 border-b border-slate-200 bg-slate-50/95 flex items-center justify-between px-8 z-30'>
-                
+            <header className='fixed top-0 right-0 left-64 h-18 border-b border-slate-200 dark:border-slate-700 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur flex items-center justify-between px-8 z-30'>
+
                 <div className='flex flex-col'>
-                    <span className='text-lg font-bold text-slate-900'>
-                        {getTitle()}
+                    <span className='text-lg font-bold text-slate-900 dark:text-slate-100'>
+                        {title}
                     </span>
-                    <span className='text-[13px] text-slate-500 '>
-                        {getSubtitle()}
+                    <span className='text-[13px] text-slate-500 dark:text-slate-400'>
+                        {subtitle}
                     </span>
                 </div>
 
-                <div className='flex items-center gap-4'>
-                    
-                    {/* Barra de Pesquisa */}
-                    <div className='relative flex items-center'>
-                        <Search className='absolute left-3 text-slate-400' size={18}/>
-                        <input 
-                            type="text" 
-                            placeholder="Pesquisar máquina, alerta..." 
-                            className="pl-10 pr-4 py-2 border border-slate-200 hover:border-slate-300 bg-white placeholder:text-slate-400 text-slate-700 text-sm rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all w-72"
-                        />
-                    </div>
+                <div className='flex items-center gap-3'>
 
-                    {/* Notificação */}
-                    <button className='relative p-2.5 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors'>
-                        <Bell size={18} />
-                    </button>
+                    {/* Notificações */}
+                    <NotificationsButton />
 
-                    {/* Modo Escuro */}
-                    <button className='p-2.5 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors'>
-                        <Sun size={18} />
-                    </button>
-
-                    {/* Adicionar Máquina */}
+                    {/* Modo escuro / claro */}
                     <button
-                        type="button"
-                        onClick={() => setIsAddMachineOpen(true)}
-                        className='flex items-center gap-2 bg-[#0070f3] hover:bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ml-1 shadow-sm'
+                        onClick={toggleTheme}
+                        className='p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors'
+                        title={theme === 'light' ? 'Modo escuro' : 'Modo claro'}
                     >
-                        <Plus size={18} />
-                        Adicionar máquina
+                        {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
                     </button>
 
-                    {/* Avatar do Utilizador (verificar se vai ser necessário haver um login antes de abir sessão */}
-                    <div className='w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-700 text-sm ml-2'>
-                        PM
+                    {/* Idioma */}
+                    <button
+                        onClick={toggleLang}
+                        className='flex items-center gap-1 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors tracking-wide'
+                        title='Mudar idioma'
+                    >
+                        <span className={lang === 'pt' ? 'text-blue-600' : 'text-slate-400 dark:text-slate-500'}>PT</span>
+                        <span className='text-slate-300 dark:text-slate-600'>/</span>
+                        <span className={lang === 'en' ? 'text-blue-600' : 'text-slate-400 dark:text-slate-500'}>EN</span>
+                    </button>
+
+                    {/* Adicionar Máquina — só para admin */}
+                    {isAdmin && (
+                        <button
+                            type="button"
+                            onClick={() => setIsAddMachineOpen(true)}
+                            className='flex items-center gap-2 bg-[#0070f3] hover:bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm'
+                        >
+                            <Plus size={18} />
+                            {t.addMachine}
+                        </button>
+                    )}
+
+                    {/* Avatar */}
+                    <div className='w-10 h-10 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 text-sm'>
+                        {initials}
                     </div>
-                    
+
                 </div>
             </header>
 
+            {/* Modal — Adicionar Máquina */}
             {isAddMachineOpen && (
                 <div
                     style={{
@@ -108,130 +111,71 @@ export default function Header(){
                 >
                     <form
                         onSubmit={handleProvisionAgent}
-                        onClick={(event) => event.stopPropagation()}
-                        className="relative rounded-2xl border border-slate-200 bg-white shadow-2xl"
-                        style={{
-                            boxSizing: 'border-box',
-                            width: '100%',
-                            maxWidth: 660,
-                            padding: 28,
-                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="relative rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl"
+                        style={{ boxSizing: 'border-box', width: '100%', maxWidth: 660, padding: 28 }}
                     >
                         <button
                             type="button"
                             onClick={closeAddMachine}
-                            className="absolute right-5 top-5 text-slate-500 transition-colors hover:text-slate-900"
+                            className="absolute right-5 top-5 text-slate-500 dark:text-slate-400 transition-colors hover:text-slate-900 dark:hover:text-slate-100"
                             aria-label="Fechar modal"
                         >
                             <X size={22} />
                         </button>
 
-                        <div
-                            className="pr-8"
-                            style={{ display: 'grid', gridTemplateColumns: '24px 1fr', columnGap: 12, alignItems: 'start' }}
-                        >
+                        <div className="pr-8" style={{ display: 'grid', gridTemplateColumns: '24px 1fr', columnGap: 12, alignItems: 'start' }}>
                             <Sparkles className="mt-1 text-[#0070f3]" size={24} strokeWidth={2.4} />
                             <div>
-                                <h2 id="add-machine-title" className="text-[22px] font-bold leading-tight text-slate-900" style={{ margin: 0 }}>
-                                    Provisionar novo Agente IoT
+                                <h2 id="add-machine-title" className="text-[22px] font-bold leading-tight text-slate-900 dark:text-slate-100" style={{ margin: 0 }}>
+                                    {t.modal.title}
                                 </h2>
-                                <p className="text-[16px] leading-relaxed text-slate-500" style={{ marginTop: 8, maxWidth: 570 }}>
-                                    Define os parâmetros base. A máquina será registada no Orion Context Broker e começará a enviar telemetria automaticamente.
+                                <p className="text-[16px] leading-relaxed text-slate-500 dark:text-slate-400" style={{ marginTop: 8, maxWidth: 570 }}>
+                                    {t.modal.description}
                                 </p>
                             </div>
                         </div>
 
-                        <div
-                            className="mt-6"
-                            style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 20 }}
-                        >
-                            <label className="flex min-w-0 flex-col gap-3 text-[15px] font-semibold text-slate-900">
-                                ID da máquina
-                                <input
-                                    type="text"
-                                    defaultValue="M-004"
-                                    className="h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 text-[16px] font-normal text-slate-700 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-[#0070f3] focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-                                />
+                        <div className="mt-6" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20 }}>
+                            <label className="flex min-w-0 flex-col gap-3 text-[15px] font-semibold text-slate-900 dark:text-slate-100">
+                                {t.modal.labelId}
+                                <input type="text" defaultValue="M-004"
+                                    className="h-11 w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-4 text-[16px] font-normal text-slate-700 dark:text-slate-200 outline-none transition-all focus:border-[#0070f3] focus:ring-4 focus:ring-blue-500/10" />
                             </label>
-
-                            <label className="flex min-w-0 flex-col gap-3 text-[15px] font-semibold text-slate-900">
-                                Nome
-                                <input
-                                    type="text"
-                                    defaultValue="Tear Circular D"
-                                    className="h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 text-[16px] font-normal text-slate-700 shadow-sm outline-none transition-all placeholder:text-slate-400 focus:border-[#0070f3] focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-                                />
+                            <label className="flex min-w-0 flex-col gap-3 text-[15px] font-semibold text-slate-900 dark:text-slate-100">
+                                {t.modal.labelName}
+                                <input type="text" defaultValue="Tear Circular D"
+                                    className="h-11 w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-4 text-[16px] font-normal text-slate-700 dark:text-slate-200 outline-none transition-all focus:border-[#0070f3] focus:ring-4 focus:ring-blue-500/10" />
                             </label>
                         </div>
 
-                        <p className="mt-4 text-[16px] text-slate-500">
-                            Identificador único no broker.
-                        </p>
-
                         <fieldset className="mt-8">
-                            <legend className="text-[18px] font-bold text-slate-900">
-                                Limites de segurança
-                            </legend>
-
-                            <div
-                                className="mt-5"
-                                style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: 20 }}
-                            >
-                                <label className="flex min-w-0 flex-col gap-3 text-[15px] font-semibold text-slate-900">
-                                    Consumo base
-                                    <input
-                                        type="number"
-                                        step="0.1"
-                                        defaultValue="12.0"
-                                        className="h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 text-[16px] font-normal text-slate-700 shadow-sm outline-none transition-all focus:border-[#0070f3] focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-                                    />
-                                    <span className="text-[16px] font-normal text-slate-600">kW</span>
-                                </label>
-
-                                <label className="flex min-w-0 flex-col gap-3 text-[15px] font-semibold text-slate-900">
-                                    Consumo máx.
-                                    <input
-                                        type="number"
-                                        step="0.1"
-                                        defaultValue="18.0"
-                                        className="h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 text-[16px] font-normal text-slate-700 shadow-sm outline-none transition-all focus:border-[#0070f3] focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-                                    />
-                                    <span className="text-[16px] font-normal text-slate-600">kW</span>
-                                </label>
-
-                                <label className="flex min-w-0 flex-col gap-3 text-[15px] font-semibold text-slate-900">
-                                    Fio mín.
-                                    <input
-                                        type="number"
-                                        defaultValue="20"
-                                        className="h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 text-[16px] font-normal text-slate-700 shadow-sm outline-none transition-all focus:border-[#0070f3] focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-                                    />
-                                    <span className="text-[16px] font-normal text-slate-600">%</span>
-                                </label>
+                            <legend className="text-[18px] font-bold text-slate-900 dark:text-slate-100">{t.modal.limitsLegend}</legend>
+                            <div className="mt-5" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)', gap: 20 }}>
+                                {([[t.modal.limitBase, '12.0', 'kW'], [t.modal.limitMax, '18.0', 'kW'], [t.modal.limitYarn, '20', '%']] as [string, string, string][]).map(([label, def, unit]) => (
+                                    <label key={label} className="flex min-w-0 flex-col gap-3 text-[15px] font-semibold text-slate-900 dark:text-slate-100">
+                                        {label}
+                                        <input type="number" step="0.1" defaultValue={def}
+                                            className="h-11 w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-4 text-[16px] font-normal text-slate-700 dark:text-slate-200 outline-none transition-all focus:border-[#0070f3] focus:ring-4 focus:ring-blue-500/10" />
+                                        <span className="text-[16px] font-normal text-slate-600 dark:text-slate-400">{unit}</span>
+                                    </label>
+                                ))}
                             </div>
                         </fieldset>
 
-                        <div
-                            className="mt-8"
-                            style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}
-                        >
-                            <button
-                                type="button"
-                                onClick={closeAddMachine}
-                                className="h-11 rounded-xl border border-slate-200 bg-white px-6 text-[16px] font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
-                            >
-                                Cancelar
+                        <div className="mt-8" style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                            <button type="button" onClick={closeAddMachine}
+                                className="h-11 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-6 text-[16px] font-semibold text-slate-800 dark:text-slate-200 shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-600">
+                                {t.modal.btnCancel}
                             </button>
-                            <button
-                                type="submit"
-                                className="h-11 rounded-xl bg-[#0070f3] px-6 text-[16px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-600"
-                            >
-                                Provisionar agente
+                            <button type="submit"
+                                className="h-11 rounded-xl bg-[#0070f3] px-6 text-[16px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-600">
+                                {t.modal.btnProvision}
                             </button>
                         </div>
                     </form>
                 </div>
             )}
         </>
-    )
+    );
 }

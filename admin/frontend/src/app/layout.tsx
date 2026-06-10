@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { Providers } from '../components/providers';
 
 export const metadata: Metadata = {
   title: 'Dashboard IoT',
@@ -13,8 +14,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-PT">
-      <body className="bg-slate-50 text-slate-900">
-        {children}
+      <body className="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors">
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
