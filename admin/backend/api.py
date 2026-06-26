@@ -118,11 +118,17 @@ def save_machines(data):
 
 def dept_urns():
     """Devolve lista de URNs permitidos para o utilizador atual.
-    Retorna None se não há filtro (admin ou sem departamento definido).
+    Retorna None se não há filtro (admin ou departamento com acesso total).
+
+    - admin            → None (sem filtro)
+    - Manutenção       → None (acesso total a todas as máquinas + pode resolver alertas)
+    - Fiação/Tecelagem/Tingimento → apenas máquinas do seu tipo
     """
     claims = get_jwt()
     if claims.get("role") == "trabalhador":
         dept = claims.get("department", "")
+        if dept == "Manutenção":
+            return None  # acesso de leitura total — sem filtro por tipo de máquina
         if dept:
             machines = load_machines()["machines"]
             return [m["id"] for m in machines if m.get("type") == dept]
@@ -256,6 +262,56 @@ def get_machine_predictions(machine_id):
 
     log.info(f"predictions {urn} minutes={minutes} -> {len(points)} pts")
     return jsonify({"machine_id": urn_to_short(urn), "points": points})
+
+
+@app.route("/api/lstm/metrics", methods=["GET"])
+@jwt_required(optional=True)
+def get_lstm_metrics():
+    allowed = dept_urns()
+
+    stmt = (
+        "SELECT entity_id, time_index, mae, failure_probability, failure_accuracy, samples_used "
+        "FROM mttextile.lstm_metrics"
+    )
+
+    try:
+        rows = crate_query(stmt)
+    except Exception as e:
+        # A tabela só é criada pelo serviço LSTM depois do primeiro ciclo de treino.
+        log.info(f"lstm_metrics ainda não disponível: {e}")
+        return jsonify({"available": False, "mae": None, "failure_accuracy": None,
+                         "last_trained_at": None, "machines": []})
+
+    if allowed is not None:
+        rows = [r for r in rows if r["entity_id"] in allowed]
+
+    if not rows:
+        return jsonify({"available": False, "mae": None, "failure_accuracy": None,
+                         "last_trained_at": None, "machines": []})
+
+    maes = [r["mae"] for r in rows if r["mae"] is not None]
+    accs = [r["failure_accuracy"] for r in rows if r["failure_accuracy"] is not None]
+    last_trained_ms = max(r["time_index"] for r in rows)
+
+    machines = [
+        {
+            "machine_id": urn_to_short(r["entity_id"]),
+            "mae": r["mae"],
+            "failure_probability": r["failure_probability"],
+            "failure_accuracy": r["failure_accuracy"],
+            "samples_used": r["samples_used"],
+        }
+        for r in rows
+    ]
+
+    log.info(f"lstm metrics -> {len(machines)} máquinas")
+    return jsonify({
+        "available": True,
+        "mae": round(sum(maes) / len(maes), 3) if maes else None,
+        "failure_accuracy": round(sum(accs) / len(accs), 3) if accs else None,
+        "last_trained_at": datetime.utcfromtimestamp(last_trained_ms / 1000).isoformat() + "Z",
+        "machines": machines,
+    })
 
 
 @app.route("/api/alerts/errors", methods=["GET"])
@@ -411,6 +467,132 @@ def get_errors_timeline():
     return jsonify({"points": points})
 
 
+@app.route("/api/kpi/uptime", methods=["GET"])
+@jwt_required(optional=True)
+def get_uptime():
+    allowed = dept_urns()
+    minutes = clamp_minutes(request.args.get("minutes"), default=1440, maximum=10080)  # default 24h, máx 7 dias
+    ms = minutes_ago_ms(minutes)
+    extra = urn_sql_filter(allowed) if allowed is not None else ""
+
+    stmt = (
+        f"SELECT entity_id, status, COUNT(*) AS n FROM ("
+        f"  SELECT entity_id, time_index, MAX(status) AS status "
+        f"  FROM mttextile.ettextilemachine "
+        f"  WHERE time_index >= {ms}{extra} "
+        f"  GROUP BY entity_id, time_index"
+        f") AS dedup "
+        f"GROUP BY entity_id, status"
+    )
+
+    try:
+        rows = crate_query(stmt)
+    except Exception as e:
+        log.warning(f"uptime query failed: {e}")
+        return jsonify({"error": str(e)}), 502
+
+    per_machine: dict = {}
+    for r in rows:
+        urn = r["entity_id"]
+        counts = per_machine.setdefault(urn, {"total": 0, "running": 0})
+        counts["total"] += r["n"]
+        if (r["status"] or "").lower() == "running":
+            counts["running"] += r["n"]
+
+    machines = [
+        {
+            "machine_id": urn_to_short(urn),
+            "uptime_pct": round(100 * counts["running"] / counts["total"], 1) if counts["total"] else None,
+            "readings": counts["total"],
+        }
+        for urn, counts in per_machine.items()
+    ]
+
+    pcts = [m["uptime_pct"] for m in machines if m["uptime_pct"] is not None]
+    avg_uptime = round(sum(pcts) / len(pcts), 1) if pcts else None
+
+    log.info(f"uptime minutes={minutes} -> {len(machines)} máquinas, média={avg_uptime}")
+    return jsonify({
+        "available": avg_uptime is not None,
+        "avg_uptime_pct": avg_uptime,
+        "minutes": minutes,
+        "machines": machines,
+    })
+
+
+@app.route("/api/environment", methods=["GET"])
+@jwt_required(optional=True)
+def get_environment():
+    """Devolve temperatura e humidade médias por linha (Linha Norte = Fiação+Tecelagem,
+    Linha Sul = Tingimento), agrupadas em blocos de 5 min, para o gráfico ambiental."""
+    minutes = clamp_minutes(request.args.get("minutes"), default=60, maximum=1440)
+    ms = minutes_ago_ms(minutes)
+    bucket_ms = 5 * 60 * 1000  # blocos de 5 min em milissegundos
+
+    stmt = (
+        f"SELECT "
+        f"  ({bucket_ms} * (time_index / {bucket_ms})) AS bucket_ts, "
+        f"  machinetype, "
+        f"  AVG(temperature) AS avg_temp, "
+        f"  AVG(humidity)    AS avg_hum "
+        f"FROM mttextile.ettextilemachine "
+        f"WHERE time_index >= {ms} "
+        f"  AND temperature IS NOT NULL "
+        f"GROUP BY bucket_ts, machinetype "
+        f"ORDER BY bucket_ts ASC"
+    )
+
+    try:
+        rows = crate_query(stmt)
+    except Exception as e:
+        log.warning(f"environment query failed: {e}")
+        return jsonify({"available": False, "error": str(e)}), 200
+
+    if not rows:
+        return jsonify({"available": False, "timestamps": [], "north_temp": [], "south_temp": [], "avg_humidity": []})
+
+    # Agrupar por bucket e separar por linha
+    from collections import defaultdict
+    buckets: dict = {}
+    for r in rows:
+        ts = r["bucket_ts"]
+        if ts not in buckets:
+            buckets[ts] = {"north_temp": [], "south_temp": [], "humidity": []}
+        mtype = (r.get("machinetype") or "").strip()
+        temp  = r["avg_temp"]
+        hum   = r["avg_hum"]
+        if mtype in ("Fiação", "Tecelagem"):
+            buckets[ts]["north_temp"].append(temp)
+        elif mtype == "Tingimento":
+            buckets[ts]["south_temp"].append(temp)
+        if hum is not None:
+            buckets[ts]["humidity"].append(hum)
+
+    sorted_ts = sorted(buckets.keys())
+    timestamps, north_temp, south_temp, avg_humidity = [], [], [], []
+    for ts in sorted_ts:
+        b = buckets[ts]
+        # Converter timestamp ms para HH:MM legível
+        from datetime import datetime, timezone
+        dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        timestamps.append(dt.strftime("%H:%M"))
+        north_temp.append(round(sum(b["north_temp"]) / len(b["north_temp"]), 1) if b["north_temp"] else None)
+        south_temp.append(round(sum(b["south_temp"]) / len(b["south_temp"]), 1) if b["south_temp"] else None)
+        avg_humidity.append(round(sum(b["humidity"]) / len(b["humidity"]), 1) if b["humidity"] else None)
+
+    # Remover None (buckets sem dados numa das linhas) para não quebrar o gráfico
+    def clean(lst):
+        return [v if v is not None else 0 for v in lst]
+
+    return jsonify({
+        "available": True,
+        "timestamps": timestamps,
+        "north_temp":   clean(north_temp),
+        "south_temp":   clean(south_temp),
+        "avg_humidity": clean(avg_humidity),
+    })
+
+
 @app.route("/api/kpi/energy-today", methods=["GET"])
 @jwt_required(optional=True)
 def get_energy_today():
@@ -477,6 +659,10 @@ def get_machines():
             else:
                 machine["online"] = False
                 machine["status"] = "offline"
+                machine["error_code"]        = 0
+                machine["error_description"] = "Offline"
+                machine["energy_consumed"]   = 0
+                machine["thread_remaining"]  = 0
                 machine["water_consumption"] = None
                 machine["chemical_level"]    = None
                 machine["compressed_air"]    = None
@@ -484,6 +670,10 @@ def get_machines():
             log.error(f"DEBUG EXCEPTION: {machine['id']} -> {e}")
             machine["online"] = False
             machine["status"] = "offline"
+            machine["error_code"]        = 0
+            machine["error_description"] = "Offline"
+            machine["energy_consumed"]   = 0
+            machine["thread_remaining"]  = 0
             machine["water_consumption"] = None
             machine["chemical_level"]    = None
             machine["compressed_air"]    = None
@@ -538,6 +728,14 @@ def add_machine():
     if body["type"] not in MACHINE_TYPES:
         return jsonify({"error": f"Tipo inválido. Tipos válidos: {MACHINE_TYPES}"}), 400
 
+    # Parâmetro específico do tipo: água + corante (Tingimento) ou ar comprimido (Fiação/Tecelagem)
+    if body["type"] == "Tingimento":
+        for field in ("base_water", "base_chemical"):
+            if field not in body:
+                return jsonify({"error": f"Campo obrigatório em falta: {field}"}), 400
+    if body["type"] in ("Fiação", "Tecelagem") and "base_air" not in body:
+        return jsonify({"error": "Campo obrigatório em falta: base_air"}), 400
+
     # Gerar ID sequencial
     existing_ids = [int(m["id"].split(":")[-1]) for m in data["machines"]]
     new_number = max(existing_ids) + 1 if existing_ids else 1
@@ -548,8 +746,13 @@ def add_machine():
         "name": body["name"],
         "type": body["type"],
         "base_energy": float(body["base_energy"]),
-        "base_thread": float(body["base_thread"])
+        "base_thread": float(body["base_thread"]),
     }
+    if body["type"] == "Tingimento":
+        new_machine["base_water"] = float(body["base_water"])
+        new_machine["base_chemical"] = float(body["base_chemical"])
+    elif body["type"] in ("Fiação", "Tecelagem"):
+        new_machine["base_air"] = float(body["base_air"])
 
     data["machines"].append(new_machine)
     save_machines(data)
@@ -558,11 +761,60 @@ def add_machine():
     return jsonify(new_machine), 201
 
 
+@app.route("/api/machines/<machine_id>", methods=["PUT"])
+@admin_required
+def update_machine(machine_id):
+    data = load_machines()
+    full_id = short_id_to_urn(machine_id)
+    machine = next((m for m in data["machines"] if m["id"] == full_id), None)
+    if not machine:
+        return jsonify({"error": "Máquina não encontrada"}), 404
+
+    body = request.get_json() or {}
+
+    if "name" in body:
+        machine["name"] = str(body["name"]).strip()
+    if "base_energy" in body:
+        v = float(body["base_energy"])
+        if v <= 0:
+            return jsonify({"error": "base_energy deve ser positivo"}), 400
+        machine["base_energy"] = v
+    if "base_thread" in body:
+        v = float(body["base_thread"])
+        if v <= 0:
+            return jsonify({"error": "base_thread deve ser positivo"}), 400
+        machine["base_thread"] = v
+    if machine["type"] == "Tingimento":
+        if "base_water" in body:
+            machine["base_water"] = float(body["base_water"])
+        if "base_chemical" in body:
+            machine["base_chemical"] = float(body["base_chemical"])
+    elif machine["type"] in ("Fiação", "Tecelagem"):
+        if "base_air" in body:
+            machine["base_air"] = float(body["base_air"])
+
+    # Atualizar nome no Orion também
+    if "name" in body:
+        try:
+            requests.patch(
+                f"{ORION_URL}/v2/entities/{quote(full_id, safe='')}/attrs",
+                json={"name": {"type": "Text", "value": machine["name"]}},
+                headers=FIWARE_HEADERS,
+                timeout=3,
+            )
+        except Exception as e:
+            log.warning(f"Não foi possível atualizar nome no Orion: {e}")
+
+    save_machines(data)
+    log.info(f"Máquina atualizada: {full_id}")
+    return jsonify(machine)
+
+
 @app.route("/api/machines/<machine_id>", methods=["DELETE"])
 @admin_required
 def remove_machine(machine_id):
     data = load_machines()
-    full_id = f"urn:ngsi-ld:TextileMachine:{machine_id}"
+    full_id = short_id_to_urn(machine_id)
     purge = request.args.get("purge", "false").lower() == "true"
 
     machines = [m for m in data["machines"] if m["id"] != full_id]

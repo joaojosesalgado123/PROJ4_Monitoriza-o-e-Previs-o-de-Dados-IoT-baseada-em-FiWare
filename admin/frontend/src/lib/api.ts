@@ -12,6 +12,9 @@ type BackendMachine = {
   type: string;
   base_energy: number;
   base_thread: number;
+  base_water?: number;
+  base_chemical?: number;
+  base_air?: number;
   status: string;
   error_code: number;
   error_description: string;
@@ -39,6 +42,11 @@ export type MachineItem = {
   waterConsumption: number | null;
   chemicalLevel: number | null;
   compressedAir: number | null;
+  baseEnergy: number;
+  baseThread: number;
+  baseWater?: number;
+  baseChemical?: number;
+  baseAir?: number;
 };
 
 export type KpiItem = {
@@ -79,6 +87,35 @@ export type ErrorsTimelinePoint = {
   by_machine: { machine_id: string; error_code: number }[];
 };
 
+export type UptimeMachine = {
+  machine_id: string;
+  uptime_pct: number | null;
+  readings: number;
+};
+
+export type Uptime = {
+  available: boolean;
+  avg_uptime_pct: number | null;
+  minutes: number;
+  machines: UptimeMachine[];
+};
+
+export type LstmMachineMetric = {
+  machine_id: string;
+  mae: number | null;
+  failure_probability: number | null;
+  failure_accuracy: number | null;
+  samples_used: number | null;
+};
+
+export type LstmMetrics = {
+  available: boolean;
+  mae: number | null;
+  failure_accuracy: number | null;
+  last_trained_at: string | null;
+  machines: LstmMachineMetric[];
+};
+
 function adaptMachine(m: BackendMachine): MachineItem {
   const shortId = m.id.split(':').pop() ?? m.id;
 
@@ -97,9 +134,9 @@ function adaptMachine(m: BackendMachine): MachineItem {
     ? Math.max(0, Math.min(100, (m.thread_remaining / m.base_thread) * 100))
     : 0;
 
-  const lastError = m.error_code === 0
+  const lastError = (!m.error_code || m.error_code === 0)
     ? null
-    : { code: `E-${m.error_code}`, message: m.error_description };
+    : { code: `E-${m.error_code}`, message: m.error_description ?? '' };
 
   return {
     id: `M-${shortId}`,
@@ -107,13 +144,18 @@ function adaptMachine(m: BackendMachine): MachineItem {
     line: m.type,
     status,
     yarnRemaining: Math.round(yarnRemaining),
-    consumption: m.energy_consumed,
+    consumption: m.energy_consumed ?? 0,
     lastError,
     lastUpdate: 'agora',
     paused: m.paused ?? false,
     waterConsumption: m.water_consumption ?? null,
     chemicalLevel: m.chemical_level ?? null,
     compressedAir: m.compressed_air ?? null,
+    baseEnergy: m.base_energy,
+    baseThread: m.base_thread,
+    baseWater: m.base_water,
+    baseChemical: m.base_chemical,
+    baseAir: m.base_air,
   };
 }
 
@@ -189,6 +231,11 @@ export type ChartMachine = {
   waterConsumption: number | null;
   chemicalLevel: number | null;
   compressedAir: number | null;
+  baseEnergy: number;
+  baseThread: number;
+  baseWater?: number;
+  baseChemical?: number;
+  baseAir?: number;
 };
 
 function toChartMachine(m: MachineItem, index: number): ChartMachine {
@@ -231,6 +278,11 @@ function toChartMachine(m: MachineItem, index: number): ChartMachine {
     waterConsumption: m.waterConsumption,
     chemicalLevel: m.chemicalLevel,
     compressedAir: m.compressedAir,
+    baseEnergy: m.baseEnergy,
+    baseThread: m.baseThread,
+    baseWater: m.baseWater,
+    baseChemical: m.baseChemical,
+    baseAir: m.baseAir,
   };
 }
 
@@ -264,6 +316,32 @@ export async function fetchPredictions(
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const data = await res.json();
   return data.points;
+}
+
+export async function fetchUptime(minutes: number = 1440): Promise<Uptime> {
+  const res = await fetch(`${API_URL}/api/kpi/uptime?minutes=${minutes}`, { cache: 'no-store', headers: authHeader() });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+export interface EnvironmentData {
+  available: boolean;
+  timestamps: string[];
+  north_temp: number[];
+  south_temp: number[];
+  avg_humidity: number[];
+}
+
+export async function fetchEnvironment(minutes: number = 60): Promise<EnvironmentData> {
+  const res = await fetch(`${API_URL}/api/environment?minutes=${minutes}`, { cache: 'no-store', headers: authHeader() });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+export async function fetchLstmMetrics(): Promise<LstmMetrics> {
+  const res = await fetch(`${API_URL}/api/lstm/metrics`, { cache: 'no-store', headers: authHeader() });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
 }
 
 export async function fetchEnergyToday(): Promise<EnergyToday> {
@@ -348,6 +426,34 @@ export function computeKpis(machines: MachineItem[]): KpiItem[] {
   ];
 }
 
+export async function fetchMachineTypes(): Promise<string[]> {
+  const res = await fetch(`${API_URL}/api/types`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+export type CreateMachinePayload = {
+  name: string;
+  type: string;
+  base_energy: number;
+  base_thread: number;
+  base_water?: number;
+  base_chemical?: number;
+  base_air?: number;
+};
+
+export async function createMachine(payload: CreateMachinePayload): Promise<void> {
+  const res = await fetch(`${API_URL}/api/machines`, {
+    method: 'POST',
+    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}) as { error?: string });
+    throw new Error(data.error || `Erro ${res.status}`);
+  }
+}
+
 export async function machineControl(machineId: string, action: 'start' | 'stop'): Promise<void> {
   const res = await fetch(`${API_URL}/api/machines/${machineId}/control`, {
     method: 'POST',
@@ -355,4 +461,36 @@ export async function machineControl(machineId: string, action: 'start' | 'stop'
     body: JSON.stringify({ action }),
   });
   if (!res.ok) throw new Error(`Control error ${res.status}`);
+}
+
+export async function deleteMachine(machineId: string, purge = false): Promise<void> {
+  const res = await fetch(`${API_URL}/api/machines/${machineId}?purge=${purge}`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}) as { error?: string });
+    throw new Error((data as { error?: string }).error || `Erro ${res.status}`);
+  }
+}
+
+export type UpdateMachinePayload = {
+  name?: string;
+  base_energy?: number;
+  base_thread?: number;
+  base_water?: number;
+  base_chemical?: number;
+  base_air?: number;
+};
+
+export async function updateMachine(machineId: string, payload: UpdateMachinePayload): Promise<void> {
+  const res = await fetch(`${API_URL}/api/machines/${machineId}`, {
+    method: 'PUT',
+    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}) as { error?: string });
+    throw new Error((data as { error?: string }).error || `Erro ${res.status}`);
+  }
 }

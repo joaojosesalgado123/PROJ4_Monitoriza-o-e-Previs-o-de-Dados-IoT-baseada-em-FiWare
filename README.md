@@ -138,9 +138,11 @@ GROUP BY entity_id, machinetype;
 
 ## Modelo LSTM
 
-O modelo LSTM (Long Short-Term Memory) é treinado automaticamente a cada 5 minutos com os dados históricos do CrateDB. Prevê o consumo de energia do próximo ciclo de cada máquina com base nas últimas 60 leituras (30 minutos de histórico).
+O modelo LSTM (Long Short-Term Memory) é treinado automaticamente a cada 5 minutos com os dados históricos do CrateDB. As leituras em bruto (a cada ~30s) são agregadas em blocos de 5 minutos; o modelo usa uma janela de 144 blocos (12h de histórico) para prever os 12 blocos seguintes (1h de consumo de energia) de cada máquina.
 
-**Nota:** O LSTM necessita de pelo menos 70 leituras por máquina para iniciar o treino. Com o intervalo padrão de 30 segundos, demora aproximadamente 35 minutos após o arranque.
+Antes de treinar, os dados são divididos 80/20 de forma cronológica: 80% mais antigos para treino, 20% mais recentes (nunca vistos em treino) para teste. O MAE reportado na interface vem desse conjunto de teste, não da loss de treino — é a forma de validar honestamente a capacidade do modelo de generalizar para dados futuros.
+
+**Nota:** O LSTM necessita de pelo menos 161 blocos de 5 min por máquina para iniciar o treino (144 para a janela de histórico + 12 para o horizonte de previsão + margem), o que equivale a cerca de 1610 leituras em bruto. Com o intervalo padrão de 30 segundos, demora aproximadamente 13 horas após o arranque. O classificador de risco de falha é independente e fica disponível muito mais cedo (~35 minutos).
 
 As previsões são guardadas na tabela `mttextile.lstm_predictions` e visualizadas no painel **"Energia Real vs Prevista"** do Grafana.
 

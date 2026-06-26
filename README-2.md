@@ -94,24 +94,22 @@ ORDER BY time_index ASC
 
 ## Adicionar mais máquinas
 
-No ficheiro `agent/agent.py`, adiciona entradas à lista `MACHINES`:
+Esta secção está desatualizada — as máquinas já não se adicionam editando uma lista `MACHINES` no `agent.py`. Hoje há duas formas:
 
-```python
-MACHINES = [
-    # ... máquinas existentes ...
-    {
-        "id": "urn:ngsi-ld:TextileMachine:004",
-        "name": "Máquina D",
-        "base_energy": 5.5,
-        "base_thread": 850.0,
-    },
-]
-```
+**1. Pela interface (recomendado):** botão "Adicionar máquina" no admin (canto superior direito, só visível para admin). Pede nome, tipo (Fiação/Tecelagem/Tingimento), consumo base (kW), fio na bobine cheia (m) e, dependendo do tipo, água base (L, Tingimento) ou ar comprimido base (m³/h, Fiação/Tecelagem). Isto chama `POST /api/machines` no backend, que regista a máquina em `machines.json` com um ID sequencial automático. O `agent.py` relê esse ficheiro a cada ciclo, por isso a máquina nova começa a enviar telemetria sem precisar de reiniciar nada.
 
-Depois reinicia o agente:
-```bash
-docker compose up -d --build iot-agent
+**2. Editando `admin/backend/machines.json` diretamente:**
+```json
+{
+  "id": "urn:ngsi-ld:TextileMachine:004",
+  "name": "Máquina D",
+  "type": "Fiação",
+  "base_energy": 5.5,
+  "base_thread": 850.0,
+  "base_air": 0.9
+}
 ```
+(usa `"base_water"` em vez de `"base_air"` se `"type"` for `"Tingimento"`). Não é preciso reiniciar nenhum container — tanto o `iot-agent` como o backend reler o ficheiro periodicamente.
 
 ## Dados simulados por cada máquina
 

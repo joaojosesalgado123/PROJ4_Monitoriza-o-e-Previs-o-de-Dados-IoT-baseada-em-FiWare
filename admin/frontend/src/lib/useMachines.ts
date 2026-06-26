@@ -27,6 +27,14 @@ export function useMachines() {
     return () => clearInterval(interval);
   }, [load, rev]);
 
+  // Refresca de imediato quando outra parte da app (ex: modal de criar máquina)
+  // sinaliza que a lista de máquinas mudou, sem esperar pelo próximo poll de 15s.
+  useEffect(() => {
+    const handleExternalChange = () => load();
+    window.addEventListener('machines:changed', handleExternalChange);
+    return () => window.removeEventListener('machines:changed', handleExternalChange);
+  }, [load]);
+
   const refresh = useCallback(() => setRev((r) => r + 1), []);
 
   return { machines, loading, error, refresh };

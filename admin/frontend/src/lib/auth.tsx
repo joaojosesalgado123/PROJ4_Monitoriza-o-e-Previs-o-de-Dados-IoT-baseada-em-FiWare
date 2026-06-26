@@ -9,6 +9,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
 export interface AuthUser {
   username: string;
   role: 'admin' | 'trabalhador';
+  department?: string;
 }
 
 interface AuthContextType {
@@ -17,6 +18,8 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   isAdmin: boolean;
+  /** true for admin + Manutenção — podem resolver alertas */
+  canResolveAlerts: boolean;
   isReady: boolean;
 }
 
@@ -73,8 +76,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/login');
   };
 
+  const isAdmin = user?.role === 'admin';
+  const canResolveAlerts = isAdmin || user?.department === 'Manutenção';
+
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAdmin: user?.role === 'admin', isReady }}>
+    <AuthContext.Provider value={{ user, token, login, logout, isAdmin, canResolveAlerts, isReady }}>
       {children}
     </AuthContext.Provider>
   );

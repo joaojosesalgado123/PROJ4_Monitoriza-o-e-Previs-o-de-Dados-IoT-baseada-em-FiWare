@@ -108,16 +108,35 @@ def simulate_reading(machine: dict) -> dict:
 
     # ── Consumos específicos por tipo de máquina ─────────────────────────────
     if mtype == "Tingimento":
-        # Água consumida por ciclo (litros) e nível de corante (%)
-        reading["water_consumption"] = round(random.uniform(50, 200), 1)
-        state["chemical_level"] = max(0, state.get("chemical_level", 100) - random.uniform(0.5, 2.0))
+        # Água consumida por ciclo (litros), a partir do base_water da máquina (±15%,
+        # igual ao padrão usado para energy_consumed).
+        base_water = machine.get("base_water", 125.0)
+        reading["water_consumption"] = round(base_water * random.uniform(0.85, 1.15), 1)
+
+        # Nível de corante (%) — desgasta e reabastece até base_chemical, exatamente
+        # como o fio reabastece até base_thread nas máquinas de Fiação/Tecelagem.
+        base_chemical = machine.get("base_chemical", 100.0)
+        state["chemical_level"] = max(0, state.get("chemical_level", base_chemical) - random.uniform(0.5, 2.0))
         if state["chemical_level"] < 10:
-            state["chemical_level"] = 100.0   # reabastecimento
+            state["chemical_level"] = base_chemical * random.uniform(0.9, 1.0)   # reabastecimento
         reading["chemical_level"] = round(state["chemical_level"], 1)
 
     elif mtype in ("Fiação", "Tecelagem"):
-        # Ar comprimido consumido (m³/h)
-        reading["compressed_air"] = round(random.uniform(0.3, 1.5), 2)
+        # Ar comprimido consumido (m³/h), a partir do base_air da máquina (±15%)
+        base_air = machine.get("base_air", 0.9)
+        reading["compressed_air"] = round(base_air * random.uniform(0.85, 1.15), 2)
+
+    # ── Temperatura e humidade ambientais ─────────────────────────────────────
+    # Variam por tipo de máquina: Tingimento = processo húmido/mais fresco;
+    # Fiação/Tecelagem = chão de produção seco/mais quente.
+    if mtype == "Tingimento":
+        base_temp     = machine.get("base_temp",     20.0)   # banhos de corante — mais fresco
+        base_humidity = machine.get("base_humidity", 62.0)   # humidade elevada
+    else:
+        base_temp     = machine.get("base_temp",     23.0)   # atrito do fio — mais quente
+        base_humidity = machine.get("base_humidity", 45.0)   # humidade baixa
+    reading["temperature"] = round(base_temp     + random.uniform(-2.0, 2.0), 1)
+    reading["humidity"]    = round(base_humidity + random.uniform(-5.0, 5.0), 1)
 
     return reading
 
@@ -166,6 +185,10 @@ def create_entity(machine: dict, reading: dict):
         "error_description":{"type": "Text",    "value": reading["error_description"]},
         "status":          {"type": "Text",     "value": reading["status"]},
         "timestamp":       {"type": "DateTime", "value": reading["timestamp"]},
+        "temperature":     {"type": "Number",   "value": reading["temperature"],
+                            "metadata": {"unit": {"type": "Text", "value": "°C"}}},
+        "humidity":        {"type": "Number",   "value": reading["humidity"],
+                            "metadata": {"unit": {"type": "Text", "value": "%"}}},
     }
     body.update(_type_attrs(machine, reading))
     r = requests.post(url, json=body, headers=HEADERS, timeout=5)
@@ -188,6 +211,8 @@ def update_entity(machine: dict, reading: dict):
         "status":            {"type": "Text",     "value": reading["status"]},
         "timestamp":         {"type": "DateTime", "value": reading["timestamp"]},
         "machineType":       {"type": "Text",     "value": machine["type"]},
+        "temperature":       {"type": "Number",   "value": reading["temperature"]},
+        "humidity":          {"type": "Number",   "value": reading["humidity"]},
     }
     body.update(_type_attrs(machine, reading))
     r = requests.put(url, json=body, headers=HEADERS, timeout=5)
@@ -200,7 +225,8 @@ def update_entity(machine: dict, reading: dict):
         log.info(
             f"[{machine['name']}] energy={reading['energy_consumed']} kWh | "
             f"thread={reading['thread_remaining']} m | "
-            f"error={reading['error_code']} | status={reading['status']}{extras}"
+            f"error={reading['error_code']} | status={reading['status']}{extras} | "
+            f"temp={reading['temperature']}°C hum={reading['humidity']}%"
         )
     else:
         log.error(f"Erro ao atualizar {machine['id']}: {r.status_code} {r.text}")
@@ -223,11 +249,41 @@ def send_reading(machine: dict):
 
 # Setup inicial: subscrição Orion → QuantumLeap
 
+QUANTUMLEAP_NOTIFY_URL = "http://quantumleap:8668/v2/notify"
+
+
 def setup_subscription():
+    """Garante que existe exatamente UMA subscrição Orion->QuantumLeap.
+
+    Importante: o GET tem de filtrar pelas subscrições que já apontam para o
+    QuantumLeap (notification.http.url), não apenas verificar se 'existe
+    alguma subscrição'. Esse era o bug: como o iot-agent reinicia sempre que
+    o stack é reiniciado/reconstruído (restart: unless-stopped, rebuilds
+    durante o desenvolvimento), main() chama setup_subscription() em todos os
+    arranques; se o GET não filtrar corretamente, cada arranque podia acabar
+    por criar mais uma subscrição duplicada, fazendo o QuantumLeap receber a
+    mesma notificação várias vezes e inserir várias linhas (com o mesmo
+    timestamp) no CrateDB por cada leitura real."""
     url = f"{ORION_URL}/v2/subscriptions"
     existing = requests.get(url, headers=HEADERS, timeout=5)
-    if existing.status_code == 200 and len(existing.json()) > 0:
-        log.info("Subscrição QuantumLeap já existe, a saltar criação.")
+    quantumleap_subs = []
+    if existing.status_code == 200:
+        quantumleap_subs = [
+            s for s in existing.json()
+            if s.get("notification", {}).get("http", {}).get("url") == QUANTUMLEAP_NOTIFY_URL
+        ]
+
+    if len(quantumleap_subs) == 1:
+        log.info("Subscrição QuantumLeap já existe (1), a saltar criação.")
+        return
+    elif len(quantumleap_subs) > 1:
+        log.warning(
+            f"Encontradas {len(quantumleap_subs)} subscrições duplicadas para o "
+            f"QuantumLeap; a remover todas menos uma para parar a duplicação de leituras."
+        )
+        for sub in quantumleap_subs[1:]:
+            del_url = f"{ORION_URL}/v2/subscriptions/{sub['id']}"
+            requests.delete(del_url, headers=HEADERS, timeout=5)
         return
 
     body = {
@@ -237,14 +293,16 @@ def setup_subscription():
             "condition": {
                 "attrs": ["energy_consumed", "thread_remaining", "error_code",
                           "error_description", "status", "machineType",
-                          "water_consumption", "chemical_level", "compressed_air"]
+                          "water_consumption", "chemical_level", "compressed_air",
+                          "temperature", "humidity"]
             },
         },
         "notification": {
             "http": {"url": "http://quantumleap:8668/v2/notify"},
             "attrs": ["energy_consumed", "thread_remaining", "error_code", "error_description",
                       "status", "timestamp", "machineType",
-                      "water_consumption", "chemical_level", "compressed_air"],
+                      "water_consumption", "chemical_level", "compressed_air",
+                      "temperature", "humidity"],
             "metadata": ["dateCreated", "dateModified"],
         },
         "throttling": 0,
@@ -291,7 +349,7 @@ def main():
                     "total_energy":     0.0,
                     "error_code":       0,
                     "status":           "running",
-                    "chemical_level":   100.0,
+                    "chemical_level":   machine.get("base_chemical", 100.0),
                 }
             try:
                 send_reading(machine)

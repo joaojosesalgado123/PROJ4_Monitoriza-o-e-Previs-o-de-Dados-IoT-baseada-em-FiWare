@@ -11,12 +11,15 @@ import {
   ChevronDown,
   Cpu,
   Gauge,
+  Pencil,
   Target,
   TimerReset,
+  Trash2,
   TrendingUp,
+  X,
   Zap,
 } from 'lucide-react';
-import { ChartMachine, ErrorsTimelinePoint, HistoryPoint, machineControl } from '../lib/api';
+import { ChartMachine, ErrorsTimelinePoint, HistoryPoint, LstmMetrics, UpdateMachinePayload, deleteMachine, machineControl, updateMachine } from '../lib/api';
 import { useMachines } from '../lib/useMachines';
 import { useAuth } from '../lib/auth';
 import { useMachineHistory } from '../lib/useMachineHistory';
@@ -24,9 +27,24 @@ import { usePredictions } from '../lib/usePredictions';
 import { useEnergyToday } from '../lib/useEnergyToday';
 import { useSeverityTimeline } from '../lib/useSeverityTimeline';
 import { useErrorsTimeline } from '../lib/useErrorsTimeline';
+import { useLstmMetrics } from '../lib/useLstmMetrics';
+import { useNextHourForecast } from '../lib/useNextHourForecast';
+import { useUptime } from '../lib/useUptime';
+import { useEnvironment } from '../lib/useEnvironment';
 import { useLang } from '../lib/lang';
 
 const FALLBACK_COLORS = ['#0f7ee7', '#38a4e8', '#d7bf42', '#10b981', '#8b5cf6', '#f59e0b'];
+
+function formatElapsed(isoTime: string | null): string {
+  if (!isoTime) return '—';
+  const diffMs = Date.now() - new Date(isoTime).getTime();
+  const minutes = Math.max(0, Math.round(diffMs / 60000));
+  if (minutes < 1) return '<1 min';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem > 0 ? `${hours}h ${rem}m` : `${hours}h`;
+}
 
 function pointsToSeries(
   machines: { label: string; color: string; points: HistoryPoint[] }[],
@@ -108,14 +126,53 @@ function pathFromPoints(points: Point[]) {
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
 }
 
-function areaPath(points: Point[], height: number, padY=28) {
-  const first = points[0];
-  const last  = points[points.length - 1];
-  return `${pathFromPoints(points)} L ${last.x.toFixed(1)} ${height - padY} L ${first.x.toFixed(1)} ${height - padY} Z`;
+/** Curva suave (Catmull-Rom -> Bézier cúbica) em vez de segmentos de reta entre pontos. */
+function smoothPathFromPoints(points: Point[]): string {
+  if (points.length === 0) return '';
+  if (points.length < 3) return pathFromPoints(points);
+
+  let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+  return d;
 }
 
-function bandPath(top: Point[], bottom: Point[]) {
-  return `${pathFromPoints(top)} ${[...bottom].reverse().map((p) => `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')} Z`;
+/** Continuação de uma curva suave (sem 'M' inicial) — usada para fechar bandas. */
+function smoothPathContinuation(points: Point[]): string {
+  if (points.length === 0) return '';
+  if (points.length < 3) {
+    return points.map((p) => `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  }
+  let d = `L ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+
+/** Banda de incerteza com contornos suaves (curva superior + curva inferior invertida). */
+function smoothBandPath(top: Point[], bottom: Point[]) {
+  if (top.length === 0 || bottom.length === 0) return '';
+  const topCurve = smoothPathFromPoints(top);
+  const bottomCurve = smoothPathContinuation([...bottom].reverse());
+  return `${topCurve} ${bottomCurve} Z`;
 }
 
 function cx(...values: Array<string | false | null | undefined>) {
@@ -333,14 +390,20 @@ export function ErrorBarsChart({ points, colors = {} }: { points: ErrorsTimeline
 
 // ─── FailureProbabilityChart ──────────────────────────────────────────────────
 
-export function FailureProbabilityChart({ rows }: { rows: ChartMachine[] }) {
+export function FailureProbabilityChart({ rows, metrics }: { rows: ChartMachine[]; metrics?: LstmMetrics }) {
   const { t } = useLang();
   const [hovered, setHovered] = useState<string | null>(null);
+
+  const byMachine = new Map((metrics?.machines ?? []).map((m) => [m.machine_id, m]));
 
   return (
     <div className="space-y-5">
       {rows.map((machine) => {
-        const value = machine.failureProbability;
+        const real = byMachine.get(machine.id)?.failure_probability;
+        // Enquanto o modelo de falha não tem dados suficientes, usa a estimativa
+        // estática por estado da máquina como aproximação visual.
+        const value = real != null ? Math.round(real * 100) : machine.failureProbability;
+        const isReal = real != null;
         const color = value >= 65 ? '#ef4444' : value >= 35 ? '#f59e0b' : '#10b981';
         return (
           <div key={machine.id} className="relative">
@@ -358,6 +421,9 @@ export function FailureProbabilityChart({ rows }: { rows: ChartMachine[] }) {
               <div className="absolute right-0 top-12 z-10 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-[12px] shadow-lg">
                 <div className="font-semibold text-slate-900 dark:text-slate-100">{machine.name}</div>
                 <div className="text-slate-500 dark:text-slate-400">{t.fore.failureProb}: {value}%</div>
+                <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                  {isReal ? t.fore.modelOutput : t.dash.lstmNotAvail}
+                </div>
               </div>
             )}
           </div>
@@ -376,7 +442,12 @@ export function YarnRemainingChart({ rows }: { rows: ChartMachine[] }) {
   return (
     <div className="grid grid-cols-3 gap-4">
       {rows.map((machine) => {
-        const value = machine.yarnRemaining;
+        // Cada tipo tem a sua própria "matéria-prima" a esgotar-se: fio (Fiação/Tecelagem)
+        // ou corante (Tingimento) — chemical_level já é guardado/enviado exatamente da
+        // mesma forma que thread_remaining, só muda o que mostramos.
+        const isDyeing = machine.type === 'Tingimento';
+        const value = isDyeing ? Math.round(machine.chemicalLevel ?? 0) : machine.yarnRemaining;
+        const label = isDyeing ? t.fore.chemicalRemaining : t.fore.yarnRemaining;
         const color = value <= 25 ? '#ef4444' : value <= 55 ? '#f59e0b' : '#10b981';
         const circumference = 2 * Math.PI * 48;
         const dash = (value / 100) * circumference;
@@ -392,14 +463,14 @@ export function YarnRemainingChart({ rows }: { rows: ChartMachine[] }) {
               <span className="rounded-full bg-white dark:bg-slate-600 px-2 py-1 text-[11px] font-medium text-slate-500 dark:text-slate-300 shadow-sm">{machine.type}</span>
             </div>
             <div className="mt-5 flex items-center justify-center">
-              <svg viewBox="0 0 120 120" className="h-32 w-32" role="img" aria-label={`${t.fore.yarnRemaining} ${machine.shortName}`}>
+              <svg viewBox="0 0 120 120" className="h-32 w-32" role="img" aria-label={`${label} ${machine.shortName}`}>
                 <circle cx="60" cy="60" r="48" fill="none" stroke="#e2e8f0" strokeWidth="12" className="stroke-slate-200 dark:stroke-slate-600" />
                 <circle cx="60" cy="60" r="48" fill="none" stroke={color} strokeWidth="12" strokeLinecap="round"
                   strokeDasharray={`${dash} ${circumference - dash}`} transform="rotate(-90 60 60)" />
                 <text x="60" y="64" textAnchor="middle" className="fill-slate-900 dark:fill-slate-100 text-[22px] font-bold">{value}%</text>
               </svg>
             </div>
-            <div className="mt-2 text-center text-[12px] text-slate-500 dark:text-slate-400">{t.fore.yarnRemaining}</div>
+            <div className="mt-2 text-center text-[12px] text-slate-500 dark:text-slate-400">{label}</div>
             {hovered === machine.id && (
               <div className="absolute left-4 right-4 top-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-[12px] shadow-lg">
                 <div className="font-semibold text-slate-900 dark:text-slate-100">{machine.name}</div>
@@ -421,10 +492,12 @@ export function SeverityOverTimeChart({ series = severitySeriesDefault, labels }
 
 // ─── PredictionPanel ──────────────────────────────────────────────────────────
 
+type HoverState = { kind: 'hist' | 'forecast'; index: number } | null;
+
 export function PredictionPanel({ rows }: { rows: ChartMachine[] }) {
   const { t } = useLang();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [hover, setHover] = useState<HoverState>(null);
   const machine = rows[selectedIndex] ?? rows[0];
 
   const { points: historyPoints } = useMachineHistory(machine?.id, 'energy', 60);
@@ -432,19 +505,25 @@ export function PredictionPanel({ rows }: { rows: ChartMachine[] }) {
 
   if (!machine) return <div className="flex h-[200px] items-center justify-center text-[14px] text-slate-400 dark:text-slate-500">{t.fore.loadingData}</div>;
 
+  // Só há previsão real quando o endpoint devolve pontos (modelo já treinado
+  // com dados suficientes). Antes disso NÃO se deve inventar uma curva a
+  // partir de `machine.forecast` (dados mock) — isso fazia o gráfico parecer
+  // funcional mesmo quando o LSTM ainda não tinha histórico suficiente.
+  const forecastReady = predPoints.length > 0;
+
   const width = 1180; const height = 330;
   const PAD_L = 46; const PAD_R = 26; const PAD_Y = 28;
-  // "agora" está sempre a 70% da largura útil do gráfico
-  const NOW_RATIO = 0.70;
+  // Histórico (60 min) e previsão (60 min, 12 passos de 5 min) ocupam metade cada
+  const NOW_RATIO = 0.50;
   const nowX = PAD_L + NOW_RATIO * (width - PAD_L - PAD_R);
 
   const histLabels = ['-60m','-52m','-44m','-36m','-28m','-20m','-12m','-4m'];
-  const foreLabels = ['+5m','+10m','+15m','+20m','+25m','+30m'];
+  const foreLabels = ['+5m','+10m','+15m','+20m','+25m','+30m','+35m','+40m','+45m','+50m','+55m','+60m'];
 
-  const real    = historyPoints.length > 0 ? historyPoints.map((p) => p.value) : machine.history;
-  const forecast = predPoints.length > 0 ? predPoints.map((p) => p.value) : machine.forecast;
-  const minBand  = predPoints.length > 0 ? predPoints.map((p) => p.min)   : machine.forecastMin;
-  const maxBand  = predPoints.length > 0 ? predPoints.map((p) => p.max)   : machine.forecastMax;
+  const real     = historyPoints.length > 0 ? historyPoints.map((p) => p.value) : machine.history;
+  const forecast = forecastReady ? predPoints.map((p) => p.value) : [];
+  const minBand  = forecastReady ? predPoints.map((p) => p.min)   : [];
+  const maxBand  = forecastReady ? predPoints.map((p) => p.max)   : [];
 
   // Calcular máximo global para escala Y consistente
   const allValues = [...real, ...forecast, ...minBand, ...maxBand];
@@ -455,7 +534,11 @@ export function PredictionPanel({ rows }: { rows: ChartMachine[] }) {
   const forecastPoints = toPointsRange(forecast, 0, yMax, nowX,  width - PAD_R,  height, PAD_Y);
   const minPoints      = toPointsRange(minBand,  0, yMax, nowX,  width - PAD_R,  height, PAD_Y);
   const maxPoints      = toPointsRange(maxBand,  0, yMax, nowX,  width - PAD_R,  height, PAD_Y);
-  const hoverPoint = hoverIndex !== null ? realPoints[hoverIndex] : null;
+
+  const hoverPoint =
+    hover?.kind === 'hist'     ? realPoints[hover.index] :
+    hover?.kind === 'forecast' ? forecastPoints[hover.index] :
+    null;
 
   return (
     <Panel
@@ -480,17 +563,55 @@ export function PredictionPanel({ rows }: { rows: ChartMachine[] }) {
         </div>
       }
     >
-      <div className="grid grid-cols-3 gap-4">
-        <KpiMini label={t.fore.currentConsumption} value={`${machine.consumption.toFixed(2)} kW`} />
-        <KpiMini label={t.fore.avgForecast} value={`${(machine.forecast.reduce((s,v)=>s+v,0)/machine.forecast.length).toFixed(2)} kW`} icon={<BrainCircuit size={14} />} />
-        <KpiMini label={t.fore.expectedVar} value="+6.3%" accent="text-red-500" icon={<TrendingUp size={15} />} />
-      </div>
+      {(() => {
+        const avgForecast = forecastReady ? forecast.reduce((s, v) => s + v, 0) / forecast.length : null;
+        const variationPct = forecastReady && machine.consumption > 0
+          ? ((avgForecast! - machine.consumption) / machine.consumption) * 100
+          : null;
+        return (
+          <div className="grid grid-cols-3 gap-4">
+            <KpiMini label={t.fore.currentConsumption} value={`${machine.consumption.toFixed(2)} kW`} />
+            <KpiMini
+              label={t.fore.avgForecast}
+              value={forecastReady ? `${avgForecast!.toFixed(2)} kW` : '—'}
+              icon={<BrainCircuit size={14} />}
+            />
+            <KpiMini
+              label={t.fore.expectedVar}
+              value={forecastReady && variationPct !== null ? `${variationPct >= 0 ? '+' : ''}${variationPct.toFixed(1)}%` : '—'}
+              accent={forecastReady && variationPct !== null ? (variationPct >= 0 ? 'text-red-500' : 'text-emerald-600') : undefined}
+              icon={<TrendingUp size={15} />}
+            />
+          </div>
+        );
+      })()}
       <div className="relative mt-4 h-[330px] overflow-hidden">
-        {hoverPoint && (
+        {!forecastReady && (
+          <div className="absolute inset-y-0 right-0 z-10 flex w-1/2 flex-col items-center justify-center gap-2 px-6 text-center">
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-[12px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+              {t.dash.soonBadge}
+            </span>
+            <p className="text-[13px] text-slate-400 dark:text-slate-500">{t.dash.lstmNotAvail}</p>
+          </div>
+        )}
+        {hoverPoint && hover && (
           <div className="absolute top-4 z-10 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-[12px] shadow-lg"
-            style={{ left: `min(calc(${(hoverPoint.x/width)*100}% + 8px), calc(100% - 150px))` }}>
-            <div className="font-semibold text-slate-900 dark:text-slate-100">{histLabels[Math.min(hoverIndex ?? 0, histLabels.length - 1)]}</div>
-            <div className="text-slate-500 dark:text-slate-400">{machine.shortName}: {(machine.history[Math.min(hoverIndex ?? 0, machine.history.length - 1)] ?? 0).toFixed(2)} kW</div>
+            style={{ left: `min(calc(${(hoverPoint.x/width)*100}% + 8px), calc(100% - 220px))` }}>
+            {hover.kind === 'hist' ? (
+              <>
+                <div className="font-semibold text-slate-900 dark:text-slate-100">{histLabels[Math.min(hover.index, histLabels.length - 1)]}</div>
+                <div className="text-slate-500 dark:text-slate-400">{machine.shortName}: {(real[Math.min(hover.index, real.length - 1)] ?? 0).toFixed(2)} kWh</div>
+              </>
+            ) : (
+              <>
+                <div className="font-semibold text-slate-900 dark:text-slate-100">
+                  {machine.shortName} {foreLabels[Math.min(hover.index, foreLabels.length - 1)]}: {(forecast[hover.index] ?? 0).toFixed(2)} kWh
+                </div>
+                <div className="text-violet-500 dark:text-violet-400">
+                  {t.fore.errorRange}: {(minBand[hover.index] ?? 0).toFixed(2)} – {(maxBand[hover.index] ?? 0).toFixed(2)} kWh
+                </div>
+              </>
+            )}
           </div>
         )}
         <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" role="img" aria-label="Previsão de consumo">
@@ -514,15 +635,44 @@ export function PredictionPanel({ rows }: { rows: ChartMachine[] }) {
             const x = nowX + ((i + 1) / foreLabels.length) * (width - PAD_R - nowX);
             return <text key={label} x={x - 14} y={height - 8} className="fill-violet-400 dark:fill-violet-500 text-[11px]">{label}</text>;
           })}
-          <path d={areaPath(realPoints, height)} fill="#0f7ee7" opacity="0.12" />
-          <path d={bandPath(maxPoints, minPoints)} fill="#8b5cf6" opacity="0.12" />
-          <path d={pathFromPoints(realPoints)} fill="none" stroke="#0f7ee7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-          <path d={pathFromPoints(forecastPoints)} fill="none" stroke="#8b5cf6" strokeDasharray="7 7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+
+          {/* Área suave sob o histórico */}
+          <path d={smoothPathFromPoints(realPoints)} fill="none" stroke="none" />
+          <path d={`${smoothPathFromPoints(realPoints)} L ${realPoints[realPoints.length-1]?.x.toFixed(1)} ${height-PAD_Y} L ${realPoints[0]?.x.toFixed(1)} ${height-PAD_Y} Z`}
+            fill="#0f7ee7" opacity="0.08" />
+
+          {/* Banda de erro (min/max) — sombreada e bem visível, como no exemplo de referência */}
+          <path d={smoothBandPath(maxPoints, minPoints)} fill="#8b5cf6" opacity="0.22" stroke="#a78bfa" strokeOpacity="0.4" strokeWidth="1" />
+
+          {/* Curva suave: histórico + previsão */}
+          <path d={smoothPathFromPoints(realPoints)} fill="none" stroke="#0f7ee7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={smoothPathFromPoints(forecastPoints)} fill="none" stroke="#7c3aed" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+
           <line x1={nowX} x2={nowX} y1="28" y2={height-28} stroke="#64748b" strokeDasharray="3 5" />
           <text x={nowX-22} y="48" className="fill-slate-400 dark:fill-slate-500 text-[11px]">{t.fore.now}</text>
+
+          {/* Pontos do limite da banda (min/max) */}
+          {[...minPoints, ...maxPoints].map((point, index) => (
+            <circle key={`band-${index}`} cx={point.x} cy={point.y} r="2.5" fill="#ef4444" opacity="0.7" />
+          ))}
+
+          {/* Marcadores ao longo da curva real */}
           {realPoints.map((point, index) => (
-            <circle key={index} cx={point.x} cy={point.y} r="13" fill="transparent"
-              onMouseEnter={() => setHoverIndex(index)} onMouseLeave={() => setHoverIndex(null)} />
+            <circle key={`real-${index}`} cx={point.x} cy={point.y} r="4" fill="#10b981" stroke="white" strokeWidth="1.5" />
+          ))}
+          {/* Marcadores ao longo da curva de previsão */}
+          {forecastPoints.map((point, index) => (
+            <circle key={`fore-${index}`} cx={point.x} cy={point.y} r="4" fill="#10b981" stroke="white" strokeWidth="1.5" />
+          ))}
+
+          {/* Áreas de interação para o tooltip (invisíveis, maiores que os marcadores) */}
+          {realPoints.map((point, index) => (
+            <circle key={`hit-real-${index}`} cx={point.x} cy={point.y} r="13" fill="transparent"
+              onMouseEnter={() => setHover({ kind: 'hist', index })} onMouseLeave={() => setHover(null)} />
+          ))}
+          {forecastPoints.map((point, index) => (
+            <circle key={`hit-fore-${index}`} cx={point.x} cy={point.y} r="13" fill="transparent"
+              onMouseEnter={() => setHover({ kind: 'forecast', index })} onMouseLeave={() => setHover(null)} />
           ))}
         </svg>
       </div>
@@ -535,7 +685,14 @@ export function PredictionPanel({ rows }: { rows: ChartMachine[] }) {
 export function DashboardOverview() {
   const { machines: rows, loading } = useMachines();
   const { data: energyData } = useEnergyToday();
+  const { data: lstmMetrics } = useLstmMetrics();
+  const { forecastKwh, available: forecastAvailable } = useNextHourForecast(rows.map((m) => m.id));
   const { t } = useLang();
+
+  const currentKwh = rows.reduce((sum, m) => sum + m.consumption, 0);
+  const forecastVariationPct = forecastAvailable && currentKwh > 0
+    ? ((forecastKwh - currentKwh) / currentKwh) * 100
+    : null;
 
   const total   = rows.length;
   const running = rows.filter((m) => m.status === 'Running').length;
@@ -575,10 +732,12 @@ export function DashboardOverview() {
         />
         <KpiCard
           label={t.dash.nextHourForecast}
-          value="—"
-          detail={t.dash.lstmNotAvail}
+          value={forecastAvailable ? `${forecastKwh.toFixed(1)} kWh` : '—'}
+          detail={forecastAvailable
+            ? `${forecastVariationPct != null && forecastVariationPct >= 0 ? '+' : ''}${forecastVariationPct?.toFixed(1) ?? '0.0'}% vs ${t.fore.currentConsumption.toLowerCase()}`
+            : t.dash.lstmNotAvail}
           icon={<span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 dark:bg-violet-900/30 text-violet-600"><BrainCircuit size={20} /></span>}
-          badge={t.dash.soonBadge}
+          badge={forecastAvailable ? undefined : t.dash.soonBadge}
         />
       </div>
 
@@ -586,7 +745,7 @@ export function DashboardOverview() {
 
       <div className="mt-6 grid grid-cols-[0.85fr_1.15fr] gap-4">
         <Panel title={t.dash.opRisk} subtitle={t.dash.opRiskSub}>
-          <FailureProbabilityChart rows={rows} />
+          <FailureProbabilityChart rows={rows} metrics={lstmMetrics} />
         </Panel>
         <Panel title={t.dash.latestEvents} subtitle={t.dash.latestEventsSub}>
           <div className="space-y-3">
@@ -610,12 +769,203 @@ export function DashboardOverview() {
   );
 }
 
+// ─── MaintenanceOverview ──────────────────────────────────────────────────────
+
+export function MaintenanceOverview() {
+  const { machines: rows, loading } = useMachines();
+  const { canResolveAlerts } = useAuth();
+  const { t } = useLang();
+  const { points: severityPoints } = useSeverityTimeline(60, 5);
+  const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
+
+  // ── máquinas ───────────────────────────────────────────────────────────────
+  const total             = rows.length;
+  const running           = rows.filter((m) => m.status === 'Running').length;
+  const errors            = rows.filter((m) => m.status === 'Error').length;
+  const totalConsumption  = rows.reduce((s, m) => s + m.consumption, 0);
+
+  // máquinas com problema, ordenadas por gravidade (Error primeiro)
+  const problemMachines = rows
+    .filter((m) => m.status !== 'Running')
+    .sort((a, b) => {
+      const rank: Record<string, number> = { Error: 2, Offline: 1, Stopped: 0 };
+      return (rank[b.status] ?? 0) - (rank[a.status] ?? 0);
+    });
+
+  // ── alertas ────────────────────────────────────────────────────────────────
+  const baseAlerts: AlertRow[] = rows.filter((m) => m.error !== '-').map((m, i) => ({
+    id: `A-${1000 + i}`, machine: m.id, occurrence: m.error,
+    severity: (m.status === 'Error' ? 'Crítico' : 'Aviso') as AlertRow['severity'],
+    status: 'Aberto' as AlertRow['status'], firedAt: m.updatedAt,
+  }));
+  const alerts: AlertRow[] = baseAlerts.map((a) =>
+    resolvedIds.has(a.id) ? { ...a, status: 'Resolvido' as AlertRow['status'] } : a
+  );
+  const openAlerts     = alerts.filter((a) => a.status === 'Aberto');
+  const resolvedCount  = alerts.filter((a) => a.status === 'Resolvido').length;
+
+  const severityChartSeries: Series[] = [
+    { label: t.alrt.critical, color: '#ef4444', values: severityPoints.map((p) => p.error) },
+    { label: t.alrt.warning,  color: '#f59e0b', values: severityPoints.map((p) => p.warning) },
+  ];
+  const severityLabels = severityPoints.map((p) => p.time.slice(11, 16));
+
+  const statusStyle = (status: string) => {
+    if (status === 'Running') return 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400';
+    if (status === 'Error')   return 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400';
+    if (status === 'Stopped') return 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400';
+    return 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400';
+  };
+
+  return (
+    <section className="mx-auto max-w-[1500px]">
+      <PageIntro
+        icon={<Cpu size={23} className="text-amber-500" />}
+        tint="bg-amber-100 dark:bg-amber-900/30"
+        title="Visão Geral · Manutenção"
+        description="Estado atual das máquinas e alertas ativos na fábrica"
+      />
+
+      {/* ── 4 KPIs ─────────────────────────────────────────────────────────── */}
+      <div className="mt-7 grid grid-cols-4 gap-4">
+        <KpiCard
+          label={t.dash.factoryStatus}
+          value={loading ? '…' : `${running} / ${total} ${t.dash.operational}`}
+          detail={loading ? '' : `${total - running} ${t.dash.outOfService}`}
+          icon={<Activity size={16} className="text-slate-500 dark:text-slate-400" />}
+        />
+        <KpiCard
+          label="Máquinas com erro"
+          value={loading ? '…' : String(errors)}
+          detail={errors === 0 ? 'Nenhum erro ativo' : `${errors} requer${errors === 1 ? '' : 'em'} intervenção`}
+          icon={<AlertTriangle size={16} className={errors > 0 ? 'text-red-500' : 'text-slate-400'} />}
+          badge={errors > 0 ? String(errors) : undefined}
+        />
+        <KpiCard
+          label={t.mach.aggregated}
+          value={loading ? '…' : `${totalConsumption.toFixed(1)} kW`}
+          detail={t.mach.aggregatedSub}
+          icon={<Zap size={16} className="text-slate-500 dark:text-slate-400" />}
+        />
+        <KpiCard
+          label={t.alrt.open}
+          value={String(openAlerts.length)}
+          detail={resolvedCount > 0 ? `${resolvedCount} resolvidos nesta sessão` : t.alrt.openSub}
+          icon={<Bell size={16} className={openAlerts.length > 0 ? 'text-red-500' : 'text-slate-400'} />}
+        />
+      </div>
+
+      {/* ── Estado das máquinas ─────────────────────────────────────────────── */}
+      <Panel className="mt-6" title={t.mach.statusTitle} subtitle="Todas as máquinas · apenas leitura">
+        <table className="w-full table-fixed border-collapse text-left text-[14px]">
+          <thead>
+            <tr className="border-b border-slate-200 dark:border-slate-700 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+              <th className="py-3">{t.mach.colMachine}</th>
+              <th className="w-[140px] py-3">{t.mach.colStatus}</th>
+              <th className="w-[230px] py-3">{t.mach.colYarn}</th>
+              <th className="w-[150px] py-3">{t.mach.colConsumption}</th>
+              <th className="py-3">{t.mach.colLastError}</th>
+              <th className="w-[110px] py-3 text-right">{t.mach.colUpdated}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((machine) => {
+              const isDyeing = machine.type === 'Tingimento';
+              const rawMaterialPct = isDyeing ? Math.round(machine.chemicalLevel ?? 0) : machine.yarnRemaining;
+              const barClass = machine.status === 'Running' ? 'bg-emerald-500' : machine.status === 'Error' ? 'bg-red-500' : 'bg-slate-400';
+              const statusLabel = machine.status === 'Stopped' ? t.mach.stopped : machine.status;
+              return (
+                <tr key={machine.id} className="border-b border-slate-200 dark:border-slate-700 last:border-b-0">
+                  <td className="py-4">
+                    <div className="font-semibold text-slate-900 dark:text-slate-100">{machine.name}</div>
+                    <div className="text-[12px] text-slate-500 dark:text-slate-400">{machine.line}</div>
+                  </td>
+                  <td className="py-4">
+                    <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium', statusStyle(machine.status))}>
+                      <span className={cx('h-1.5 w-1.5 rounded-full', barClass)} />
+                      {statusLabel}
+                    </span>
+                  </td>
+                  <td className="py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-1.5 flex-1 rounded-full bg-slate-100 dark:bg-slate-700">
+                        <div className={cx('h-full rounded-full', barClass)} style={{ width: `${rawMaterialPct}%` }} />
+                      </div>
+                      <span className="w-10 text-right text-[13px] font-semibold text-slate-900 dark:text-slate-100">{rawMaterialPct}%</span>
+                    </div>
+                  </td>
+                  <td className="py-4">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">{machine.consumption.toFixed(1)}</span>{' '}
+                    <span className="text-[12px] text-slate-500 dark:text-slate-400">kW</span>
+                  </td>
+                  <td className={cx('py-4 font-mono text-[12px]', machine.error === '-' ? 'text-slate-500 dark:text-slate-400' : machine.status === 'Error' ? 'text-red-500' : 'text-amber-500')}>
+                    {machine.error}
+                  </td>
+                  <td className="py-4 text-right text-[12px] text-slate-500 dark:text-slate-400">{machine.updatedAt}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Panel>
+
+      {/* ── Alertas ativos + gráfico de severidade ──────────────────────────── */}
+      <div className="mt-6 grid grid-cols-[1.2fr_0.8fr] gap-4">
+
+        {/* Alertas abertos */}
+        <Panel title={t.alrt.histTitle} subtitle={`${openAlerts.length} abertos · ${resolvedCount} resolvidos nesta sessão`}>
+          {openAlerts.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-emerald-600 dark:text-emerald-400 text-[14px] font-medium">
+              <CheckCircle2 size={18} />
+              {t.dash.noAlerts}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {openAlerts.map((alert) => (
+                <div key={alert.id} className={cx(
+                  'flex items-center justify-between gap-4 rounded-xl border px-4 py-3',
+                  alert.severity === 'Crítico'
+                    ? 'border-red-200 dark:border-red-900/40 bg-red-50/60 dark:bg-red-900/10'
+                    : 'border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-900/10',
+                )}>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <SeverityBadge severity={alert.severity} />
+                      <span className="font-mono text-[12px] text-slate-500 dark:text-slate-400">{alert.machine}</span>
+                    </div>
+                    <div className="mt-1.5 text-[14px] font-semibold text-slate-900 dark:text-slate-100">{alert.occurrence}</div>
+                    <div className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">{alert.firedAt}</div>
+                  </div>
+                  {canResolveAlerts && (
+                    <button type="button"
+                      onClick={() => setResolvedIds((prev) => new Set([...prev, alert.id]))}
+                      className="shrink-0 h-8 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 text-[13px] font-medium text-slate-900 dark:text-slate-100 transition hover:bg-slate-50 dark:hover:bg-slate-600">
+                      {t.alrt.resolve}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        {/* Gráfico de severidade ao longo do tempo */}
+        <Panel title={t.alrt.severityTitle} subtitle={t.alrt.severitySub}>
+          <SeverityOverTimeChart series={severityChartSeries} labels={severityLabels} />
+        </Panel>
+      </div>
+    </section>
+  );
+}
+
 // ─── MachinesView ─────────────────────────────────────────────────────────────
 
 export function MachinesView() {
   const { machines: rows, loading, refresh } = useMachines();
   const { isAdmin } = useAuth();
   const { t } = useLang();
+  const { data: uptime } = useUptime();
+  const { data: envData } = useEnvironment(60);
   const [filter, setFilter] = useState<'Todos' | 'Running' | 'Error' | 'Offline' | 'Stopped'>('Todos');
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryPoint[]>>({});
   const filteredRows = filter === 'Todos' ? rows : rows.filter((row) => row.status === filter);
@@ -645,7 +995,13 @@ export function MachinesView() {
       <div className="mt-7 grid grid-cols-3 gap-4">
         <KpiCard label={t.mach.registeredAgents} value={loading ? '…' : String(total)} detail={`${rows.filter((m) => m.status !== 'Running').length} ${t.mach.withIncident}`} icon={<Gauge size={16} className="text-slate-500 dark:text-slate-400" />} />
         <KpiCard label={t.mach.aggregated} value={loading ? '…' : `${totalConsumption.toFixed(1)} kW`} detail={t.mach.aggregatedSub} icon={<Zap size={16} className="text-slate-500 dark:text-slate-400" />} />
-        <KpiCard label={t.mach.avgUptime} value="—" detail={t.mach.uptimeSub} icon={<TimerReset size={16} className="text-slate-500 dark:text-slate-400" />} />
+        <KpiCard
+          label={t.mach.avgUptime}
+          value={uptime.available && uptime.avg_uptime_pct != null ? `${uptime.avg_uptime_pct.toFixed(1)}%` : '—'}
+          detail={uptime.available ? t.mach.uptimeSubAvailable : t.mach.uptimeSub}
+          icon={<TimerReset size={16} className="text-slate-500 dark:text-slate-400" />}
+          badge={uptime.available ? undefined : t.dash.soonBadge}
+        />
       </div>
 
       <Panel className="mt-6" title={t.mach.statusTitle} subtitle={t.mach.statusSub}
@@ -786,14 +1142,24 @@ export function MachinesView() {
       )}
 
       <Panel className="mt-6" title={t.mach.envTitle} subtitle={t.mach.envSub}>
-        <InteractiveLineChart
-          series={[
-            { label: t.mach.lineNorthTemp, color: '#f59e0b', values: [22,22.4,23.1,22.8,23.5,24,23.6,23.2,22.9,23.4,24.1,23.8] },
-            { label: t.mach.lineSouthTemp, color: '#0f7ee7', values: [21.5,21.7,22.1,22.4,22.6,22.3,22.0,22.2,22.8,23.1,22.7,22.5] },
-            { label: t.mach.avgHumidity,   color: '#10b981', values: [48,51,50,49,53,52,50,51,49,48,50,52] },
-          ]}
-          yTicks={[20,30,40,50,60]}
-        />
+        {envData.available && envData.north_temp.length > 0 ? (
+          <InteractiveLineChart
+            series={[
+              { label: t.mach.lineNorthTemp, color: '#f59e0b', values: envData.north_temp },
+              { label: t.mach.lineSouthTemp, color: '#0f7ee7', values: envData.south_temp },
+              { label: t.mach.avgHumidity,   color: '#10b981', values: envData.avg_humidity },
+            ]}
+            labels={envData.timestamps}
+            yTicks={[15, 20, 30, 40, 50, 60, 70]}
+          />
+        ) : (
+          <div className="flex h-[200px] flex-col items-center justify-center gap-2">
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-[12px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+              {t.dash.soonBadge}
+            </span>
+            <p className="text-[13px] text-slate-400 dark:text-slate-500">{t.dash.lstmNotAvail}</p>
+          </div>
+        )}
       </Panel>
     </section>
   );
@@ -801,100 +1167,356 @@ export function MachinesView() {
 
 // ─── MachineTable ─────────────────────────────────────────────────────────────
 
-function MachineTable({ rows, isAdmin, onControl }: { rows: ChartMachine[]; isAdmin: boolean; onControl?: () => void }) {
-  const { t } = useLang();
-  const [pending, setPending] = useState<string | null>(null);
+// ─── EditMachineModal ─────────────────────────────────────────────────────────
 
-  async function handleControl(machine: ChartMachine) {
-    const action = machine.paused ? 'start' : 'stop';
-    setPending(machine.id);
+function EditMachineModal({ machine, onClose, onSaved }: {
+  machine: ChartMachine;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { t } = useLang();
+  const isTingimento = machine.type === 'Tingimento';
+  const isAirType    = machine.type === 'Fiação' || machine.type === 'Tecelagem';
+
+  const [name,         setName]         = useState(machine.name);
+  const [baseEnergy,   setBaseEnergy]   = useState(String(machine.baseEnergy));
+  const [baseThread,   setBaseThread]   = useState(String(machine.baseThread));
+  const [baseWater,    setBaseWater]    = useState(String(machine.baseWater  ?? 125));
+  const [baseChemical, setBaseChemical] = useState(String(machine.baseChemical ?? 100));
+  const [baseAir,      setBaseAir]      = useState(String(machine.baseAir    ?? 0.9));
+  const [submitting,   setSubmitting]   = useState(false);
+  const [error,        setError]        = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!name.trim()) { setError('Nome obrigatório'); return; }
+    const payload: UpdateMachinePayload = {
+      name: name.trim(),
+      base_energy: Number(baseEnergy),
+      ...(isAirType    ? { base_thread: Number(baseThread), base_air: Number(baseAir) } : {}),
+      ...(isTingimento ? { base_thread: Number(baseThread), base_water: Number(baseWater), base_chemical: Number(baseChemical) } : {}),
+      ...(!isTingimento && !isAirType ? { base_thread: Number(baseThread) } : {}),
+    };
+    setSubmitting(true);
     try {
-      await machineControl(machine.id, action);
-      onControl?.();
-    } catch (e) {
-      console.error('Control error', e);
+      await updateMachine(machine.id, payload);
+      window.dispatchEvent(new Event('machines:changed'));
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao guardar');
     } finally {
-      setPending(null);
+      setSubmitting(false);
     }
   }
 
+  const inputCls = "h-11 w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-4 text-[15px] font-normal text-slate-700 dark:text-slate-200 outline-none transition-all focus:border-[#0070f3] focus:ring-4 focus:ring-blue-500/10";
+
   return (
-    <div className="overflow-hidden">
-      <table className="w-full table-fixed border-collapse text-left text-[14px]">
-        <thead>
-          <tr className="border-b border-slate-200 dark:border-slate-700 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
-            <th className="w-[110px] py-3">{t.mach.colId}</th>
-            <th className="py-3">{t.mach.colMachine}</th>
-            <th className="w-[140px] py-3">{t.mach.colStatus}</th>
-            <th className="w-[230px] py-3">{t.mach.colYarn}</th>
-            <th className="w-[140px] py-3">{t.mach.colConsumption}</th>
-            <th className="py-3">{t.mach.colLastError}</th>
-            <th className="w-[110px] py-3 text-right">{t.mach.colUpdated}</th>
-            {isAdmin && <th className="w-[100px] py-3 text-right">{t.mach.colControl}</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((machine) => {
-            const isStopped = machine.status === 'Stopped';
-            const isRunning = machine.status === 'Running';
-            const statusClass = isRunning
-              ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-              : machine.status === 'Error'
-              ? 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400'
-              : isStopped
-              ? 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
-              : 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400';
-            const barClass = isRunning ? 'bg-emerald-500' : machine.status === 'Error' ? 'bg-red-500' : 'bg-slate-400';
-            const statusLabel = isStopped ? t.mach.stopped : machine.status;
-            return (
-              <tr key={machine.id} className="border-b border-slate-200 dark:border-slate-700 last:border-b-0">
-                <td className="py-4 font-mono text-[13px] text-slate-900 dark:text-slate-100">{machine.id}</td>
-                <td className="py-4">
-                  <div className="font-semibold text-slate-900 dark:text-slate-100">{machine.name}</div>
-                  <div className="text-[12px] text-slate-500 dark:text-slate-400">{machine.line}</div>
-                </td>
-                <td className="py-4">
-                  <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium', statusClass)}>
-                    <span className={cx('h-1.5 w-1.5 rounded-full', isRunning ? 'bg-emerald-500' : machine.status === 'Error' ? 'bg-red-500' : 'bg-slate-400')} />
-                    {statusLabel}
-                  </span>
-                </td>
-                <td className="py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-1.5 flex-1 rounded-full bg-slate-100 dark:bg-slate-700">
-                      <div className={cx('h-full rounded-full', barClass)} style={{ width: `${machine.yarnRemaining}%` }} />
-                    </div>
-                    <span className="w-10 text-right text-[13px] font-semibold text-slate-900 dark:text-slate-100">{machine.yarnRemaining}%</span>
-                  </div>
-                </td>
-                <td className="py-4">
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">{machine.consumption.toFixed(1)}</span>{' '}
-                  <span className="text-[12px] text-slate-500 dark:text-slate-400">kW</span>
-                </td>
-                <td className={cx('py-4 font-mono text-[12px]', machine.error === '-' ? 'text-slate-500 dark:text-slate-400' : machine.status === 'Error' ? 'text-red-500' : 'text-amber-500')}>{machine.error}</td>
-                <td className="py-4 text-right text-[12px] text-slate-500 dark:text-slate-400">{machine.updatedAt}</td>
-                {isAdmin && (
-                  <td className="py-4 text-right">
-                    <button
-                      onClick={() => handleControl(machine)}
-                      disabled={pending === machine.id}
-                      className={cx(
-                        'inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition disabled:opacity-50',
-                        machine.paused
-                          ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
-                          : 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50',
-                      )}
-                    >
-                      {machine.paused ? t.mach.startBtn : t.mach.stopBtn}
-                    </button>
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-900/45 pt-20 px-4 pb-6"
+      onClick={onClose}>
+      <form onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-[600px] rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl p-7">
+        <button type="button" onClick={onClose}
+          className="absolute right-5 top-5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
+          <X size={22} />
+        </button>
+
+        <div className="mb-6">
+          <h2 className="text-[20px] font-bold text-slate-900 dark:text-slate-100">Editar máquina</h2>
+          <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-1">
+            {machine.id} · <span className="font-medium">{machine.type}</span>
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-5">
+          <label className="col-span-2 flex flex-col gap-2 text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+            {t.modal.labelName}
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className={inputCls} />
+          </label>
+
+          <label className="flex flex-col gap-2 text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+            {t.modal.limitBase}
+            <input type="number" step="0.1" min="0.1" value={baseEnergy} onChange={(e) => setBaseEnergy(e.target.value)} required className={inputCls} />
+            <span className="text-[13px] font-normal text-slate-500">kW</span>
+          </label>
+
+          {!isTingimento && (
+            <label className="flex flex-col gap-2 text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+              {t.modal.baseThread}
+              <input type="number" step="1" min="1" value={baseThread} onChange={(e) => setBaseThread(e.target.value)} required className={inputCls} />
+              <span className="text-[13px] font-normal text-slate-500">m</span>
+            </label>
+          )}
+
+          {isTingimento && (
+            <label className="flex flex-col gap-2 text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+              {t.modal.baseThread}
+              <input type="number" step="1" min="1" value={baseThread} onChange={(e) => setBaseThread(e.target.value)} required className={inputCls} />
+              <span className="text-[13px] font-normal text-slate-500">m</span>
+            </label>
+          )}
+
+          {isTingimento && (
+            <label className="flex flex-col gap-2 text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+              {t.modal.baseWater}
+              <input type="number" step="1" min="1" value={baseWater} onChange={(e) => setBaseWater(e.target.value)} required className={inputCls} />
+              <span className="text-[13px] font-normal text-slate-500">L</span>
+            </label>
+          )}
+
+          {isTingimento && (
+            <label className="flex flex-col gap-2 text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+              {t.modal.baseChemical}
+              <input type="number" step="1" min="1" max="100" value={baseChemical} onChange={(e) => setBaseChemical(e.target.value)} required className={inputCls} />
+              <span className="text-[13px] font-normal text-slate-500">%</span>
+            </label>
+          )}
+
+          {isAirType && (
+            <label className="flex flex-col gap-2 text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+              {t.modal.baseAir}
+              <input type="number" step="0.1" min="0.1" value={baseAir} onChange={(e) => setBaseAir(e.target.value)} required className={inputCls} />
+              <span className="text-[13px] font-normal text-slate-500">m³/h</span>
+            </label>
+          )}
+        </div>
+
+        {error && (
+          <div className="mt-4 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-[13px] text-red-600 dark:text-red-400">
+            {error}
+          </div>
+        )}
+
+        <div className="mt-7 flex justify-end gap-3">
+          <button type="button" onClick={onClose} disabled={submitting}
+            className="h-10 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-5 text-[14px] font-semibold text-slate-800 dark:text-slate-200 transition hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50">
+            {t.modal.btnCancel}
+          </button>
+          <button type="submit" disabled={submitting}
+            className="h-10 rounded-xl bg-[#0070f3] px-5 text-[14px] font-semibold text-white transition hover:bg-blue-600 disabled:opacity-60">
+            {submitting ? 'A guardar…' : 'Guardar alterações'}
+          </button>
+        </div>
+      </form>
     </div>
+  );
+}
+
+// ─── MachineTable ─────────────────────────────────────────────────────────────
+
+function MachineTable({ rows, isAdmin, onControl }: { rows: ChartMachine[]; isAdmin: boolean; onControl?: () => void }) {
+  const { t } = useLang();
+  const [pending,        setPending]        = useState<string | null>(null);
+  const [confirmStop,    setConfirmStop]    = useState<ChartMachine | null>(null);
+  const [confirmDelete,  setConfirmDelete]  = useState<ChartMachine | null>(null);
+  const [editMachine,    setEditMachine]    = useState<ChartMachine | null>(null);
+  const [deleting,       setDeleting]       = useState(false);
+
+  async function handleControl(machine: ChartMachine) {
+    if (!machine.paused) {
+      // parar → pedir confirmação
+      setConfirmStop(machine);
+      return;
+    }
+    // arrancar → direto
+    setPending(machine.id);
+    try {
+      await machineControl(machine.id, 'start');
+      onControl?.();
+    } catch (e) { console.error(e); }
+    finally { setPending(null); }
+  }
+
+  async function confirmDoStop() {
+    if (!confirmStop) return;
+    setPending(confirmStop.id);
+    setConfirmStop(null);
+    try {
+      await machineControl(confirmStop.id, 'stop');
+      onControl?.();
+    } catch (e) { console.error(e); }
+    finally { setPending(null); }
+  }
+
+  async function confirmDoDelete(purge: boolean) {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    const target = confirmDelete;
+    setConfirmDelete(null);
+    try {
+      await deleteMachine(target.id, purge);
+      window.dispatchEvent(new Event('machines:changed'));
+      onControl?.();
+    } catch (e) { console.error(e); }
+    finally { setDeleting(false); }
+  }
+
+  return (
+    <>
+      {/* Modal de edição */}
+      {editMachine && (
+        <EditMachineModal
+          machine={editMachine}
+          onClose={() => setEditMachine(null)}
+          onSaved={() => { setEditMachine(null); onControl?.(); }}
+        />
+      )}
+
+      {/* Confirmação de parar */}
+      {confirmStop && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/45" onClick={() => setConfirmStop(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-[17px] font-bold text-slate-900 dark:text-slate-100">Parar máquina?</h3>
+            <p className="mt-2 text-[14px] text-slate-500 dark:text-slate-400">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{confirmStop.name}</span> vai parar de enviar leituras. Pode ser reiniciada a qualquer momento.
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setConfirmStop(null)}
+                className="h-9 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 text-[13px] font-semibold text-slate-700 dark:text-slate-200 transition hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button onClick={confirmDoStop}
+                className="h-9 rounded-xl bg-red-500 px-4 text-[13px] font-semibold text-white transition hover:bg-red-600">
+                Parar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmação de apagar */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/45" onClick={() => setConfirmDelete(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-800 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-[17px] font-bold text-red-600 dark:text-red-400">Apagar máquina?</h3>
+            <p className="mt-2 text-[14px] text-slate-500 dark:text-slate-400">
+              Vai remover <span className="font-semibold text-slate-700 dark:text-slate-300">{confirmDelete.name}</span> do sistema e do Orion. Esta ação não pode ser desfeita.
+            </p>
+            <p className="mt-3 text-[13px] text-slate-400 dark:text-slate-500">
+              Os dados históricos no CrateDB são mantidos por defeito.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setConfirmDelete(null)} disabled={deleting}
+                className="h-9 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 text-[13px] font-semibold text-slate-700 dark:text-slate-200 transition hover:bg-slate-50 disabled:opacity-50">
+                Cancelar
+              </button>
+              <button onClick={() => confirmDoDelete(false)} disabled={deleting}
+                className="h-9 rounded-xl border border-red-300 dark:border-red-700 bg-white dark:bg-slate-700 px-4 text-[13px] font-semibold text-red-600 dark:text-red-400 transition hover:bg-red-50 disabled:opacity-50">
+                Apagar
+              </button>
+              <button onClick={() => confirmDoDelete(true)} disabled={deleting}
+                className="h-9 rounded-xl bg-red-600 px-4 text-[13px] font-semibold text-white transition hover:bg-red-700 disabled:opacity-50">
+                Apagar + dados
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="overflow-hidden">
+        <table className="w-full table-fixed border-collapse text-left text-[14px]">
+          <thead>
+            <tr className="border-b border-slate-200 dark:border-slate-700 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+              <th className="w-[110px] py-3">{t.mach.colId}</th>
+              <th className="py-3">{t.mach.colMachine}</th>
+              <th className="w-[140px] py-3">{t.mach.colStatus}</th>
+              <th className="w-[230px] py-3">{t.mach.colYarn}</th>
+              <th className="w-[140px] py-3">{t.mach.colConsumption}</th>
+              <th className="py-3">{t.mach.colLastError}</th>
+              <th className="w-[110px] py-3 text-right">{t.mach.colUpdated}</th>
+              {isAdmin && <th className="w-[160px] py-3 text-right">{t.mach.colControl}</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((machine) => {
+              const isStopped = machine.status === 'Stopped';
+              const isRunning = machine.status === 'Running';
+              const statusClass = isRunning
+                ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+                : machine.status === 'Error'
+                ? 'bg-red-100 dark:bg-red-900/30 text-red-500 dark:text-red-400'
+                : isStopped
+                ? 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                : 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400';
+              const barClass = isRunning ? 'bg-emerald-500' : machine.status === 'Error' ? 'bg-red-500' : 'bg-slate-400';
+              const statusLabel = isStopped ? t.mach.stopped : machine.status;
+              return (
+                <tr key={machine.id} className="border-b border-slate-200 dark:border-slate-700 last:border-b-0">
+                  <td className="py-4 font-mono text-[13px] text-slate-900 dark:text-slate-100">{machine.id}</td>
+                  <td className="py-4">
+                    <div className="font-semibold text-slate-900 dark:text-slate-100">{machine.name}</div>
+                    <div className="text-[12px] text-slate-500 dark:text-slate-400">{machine.line}</div>
+                  </td>
+                  <td className="py-4">
+                    <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium', statusClass)}>
+                      <span className={cx('h-1.5 w-1.5 rounded-full', isRunning ? 'bg-emerald-500' : machine.status === 'Error' ? 'bg-red-500' : 'bg-slate-400')} />
+                      {statusLabel}
+                    </span>
+                  </td>
+                  <td className="py-4">
+                    {(() => {
+                      const isDyeing = machine.type === 'Tingimento';
+                      const rawMaterialPct = isDyeing ? Math.round(machine.chemicalLevel ?? 0) : machine.yarnRemaining;
+                      return (
+                        <div className="flex items-center gap-3">
+                          <div className="h-1.5 flex-1 rounded-full bg-slate-100 dark:bg-slate-700">
+                            <div className={cx('h-full rounded-full', barClass)} style={{ width: `${rawMaterialPct}%` }} />
+                          </div>
+                          <span className="w-10 text-right text-[13px] font-semibold text-slate-900 dark:text-slate-100">{rawMaterialPct}%</span>
+                        </div>
+                      );
+                    })()}
+                  </td>
+                  <td className="py-4">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">{machine.consumption.toFixed(1)}</span>{' '}
+                    <span className="text-[12px] text-slate-500 dark:text-slate-400">kW</span>
+                  </td>
+                  <td className={cx('py-4 font-mono text-[12px]', machine.error === '-' ? 'text-slate-500 dark:text-slate-400' : machine.status === 'Error' ? 'text-red-500' : 'text-amber-500')}>{machine.error}</td>
+                  <td className="py-4 text-right text-[12px] text-slate-500 dark:text-slate-400">{machine.updatedAt}</td>
+                  {isAdmin && (
+                    <td className="py-4 text-right">
+                      <div className="inline-flex items-center gap-1.5">
+                        {/* Editar */}
+                        <button
+                          onClick={() => setEditMachine(machine)}
+                          title="Editar"
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-400 transition hover:bg-slate-50 dark:hover:bg-slate-600 hover:text-blue-600 dark:hover:text-blue-400"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        {/* Parar / Arrancar */}
+                        <button
+                          onClick={() => handleControl(machine)}
+                          disabled={pending === machine.id}
+                          className={cx(
+                            'inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition disabled:opacity-50',
+                            machine.paused
+                              ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                              : 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50',
+                          )}
+                        >
+                          {machine.paused ? t.mach.startBtn : t.mach.stopBtn}
+                        </button>
+                        {/* Apagar */}
+                        <button
+                          onClick={() => setConfirmDelete(machine)}
+                          title="Apagar"
+                          disabled={deleting}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-400 transition hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800 disabled:opacity-40"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -903,11 +1525,30 @@ function MachineTable({ rows, isAdmin, onControl }: { rows: ChartMachine[]; isAd
 export function ForecastView() {
   const { machines: rows } = useMachines();
   const { t } = useLang();
+  const { data: metrics } = useLstmMetrics();
 
   const metricCards = [
-    { label: t.fore.mae,        value: '0.41 kW', detail: t.fore.maeSub,      icon: <Target    size={16} className="text-slate-500 dark:text-slate-400" /> },
-    { label: t.fore.accuracy,   value: '87.6%',   detail: t.fore.accuracySub, icon: <Activity  size={16} className="text-slate-500 dark:text-slate-400" /> },
-    { label: t.fore.lastRetrain,value: '2h 14m',  detail: t.fore.retrainSub,  icon: <TimerReset size={16} className="text-slate-500 dark:text-slate-400" /> },
+    {
+      label: t.fore.mae,
+      value: metrics.available && metrics.mae != null ? `${metrics.mae.toFixed(2)} kW` : '—',
+      detail: metrics.available ? t.fore.maeSub : t.dash.lstmNotAvail,
+      icon: <Target size={16} className="text-slate-500 dark:text-slate-400" />,
+      badge: metrics.available ? undefined : t.dash.soonBadge,
+    },
+    {
+      label: t.fore.accuracy,
+      value: metrics.available && metrics.failure_accuracy != null ? `${(metrics.failure_accuracy * 100).toFixed(1)}%` : '—',
+      detail: metrics.available ? t.fore.accuracySub : t.dash.lstmNotAvail,
+      icon: <Activity size={16} className="text-slate-500 dark:text-slate-400" />,
+      badge: metrics.available ? undefined : t.dash.soonBadge,
+    },
+    {
+      label: t.fore.lastRetrain,
+      value: metrics.available ? formatElapsed(metrics.last_trained_at) : '—',
+      detail: metrics.available ? t.fore.retrainSub : t.dash.lstmNotAvail,
+      icon: <TimerReset size={16} className="text-slate-500 dark:text-slate-400" />,
+      badge: metrics.available ? undefined : t.dash.soonBadge,
+    },
   ];
 
   return (
@@ -920,7 +1561,7 @@ export function ForecastView() {
       <div className="mt-6"><PredictionPanel rows={rows} /></div>
       <div className="mt-6">
         <Panel title={t.fore.failureRisk} subtitle={t.fore.failureRiskSub}>
-          <FailureProbabilityChart rows={rows} />
+          <FailureProbabilityChart rows={rows} metrics={metrics} />
         </Panel>
       </div>
     </section>
@@ -932,6 +1573,7 @@ export function ForecastView() {
 export function AlertsView() {
   const { machines: rows } = useMachines();
   const { t } = useLang();
+  const { canResolveAlerts } = useAuth();
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
   const { points: severityPoints } = useSeverityTimeline(60, 5);
   const { points: errorsPoints }   = useErrorsTimeline(60, 5);
@@ -999,7 +1641,7 @@ export function AlertsView() {
                 <td className="py-4"><StatusText status={alert.status} /></td>
                 <td className="py-4 text-[13px] text-slate-500 dark:text-slate-400">{alert.firedAt}</td>
                 <td className="py-4 text-right">
-                  {alert.status !== 'Resolvido' && (
+                  {alert.status !== 'Resolvido' && canResolveAlerts && (
                     <button type="button" onClick={() => setResolvedIds((prev) => new Set([...prev, alert.id]))}
                       className="h-8 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 text-[13px] font-medium text-slate-900 dark:text-slate-100 transition hover:bg-slate-50 dark:hover:bg-slate-600">
                       {t.alrt.resolve}

@@ -29,8 +29,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:1026/version"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      retries: 12
+      start_period: 120s
 
   # --- QuantumLeap ---
   quantumleap:
@@ -120,6 +120,9 @@ services:
     environment:
       - CRATE_HOST=crate:4200
       - RUN_INTERVAL=300
+      - MACHINES_FILE=/config/machines.json
+    volumes:
+      - machines_config:/config
     networks:
       - fiware
 
@@ -132,7 +135,7 @@ services:
     restart: unless-stopped
     depends_on:
       orion:
-        condition: service_healthy
+        condition: service_started
     environment:
       - ORION_HOST=orion
       - ORION_PORT=1026

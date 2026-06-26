@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from '../../components/sidebar';
 import Header from '../../components/header';
 import { useAuth } from '../../lib/auth';
@@ -8,15 +9,22 @@ import { useLang } from '../../lib/lang';
 import { UserPlus, Trash2, User, Building2, X, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
-const DEPARTMENTS = ['Fiação', 'Tecelagem', 'Tingimento', 'Manutenção', 'Qualidade'];
+const DEPARTMENTS = ['Fiação', 'Tecelagem', 'Tingimento', 'Manutenção'];
 
 interface Worker { username: string; name: string; department: string; role: string }
 interface FormState { name: string; username: string; password: string; confirmPassword: string; department: string }
 const EMPTY_FORM: FormState = { name: '', username: '', password: '', confirmPassword: '', department: '' };
 
 export default function TrabalhadoresPage() {
-  const { token } = useAuth();
+  const { token, user, isReady } = useAuth();
   const { t } = useLang();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isReady && user?.department === 'Manutenção') {
+      router.replace('/');
+    }
+  }, [isReady, user, router]);
   const [workers, setWorkers]           = useState<Worker[]>([]);
   const [loading, setLoading]           = useState(true);
   const [showModal, setShowModal]       = useState(false);

@@ -8,11 +8,11 @@ import { useAuth } from '../lib/auth';
 import { useLang } from '../lib/lang';
 
 const NAV_ITEMS = [
-    { href: '/',              key: 'overview' as const, icon: Gauge,         adminOnly: false },
-    { href: '/maquinas',      key: 'machines'  as const, icon: Cpu,          adminOnly: false },
-    { href: '/trabalhadores', key: 'workers'   as const, icon: Users,        adminOnly: true  },
-    { href: '/previsao',      key: 'forecast'  as const, icon: BrainCircuit, adminOnly: false, badge: 'LSTM' },
-    { href: '/alertas',       key: 'alerts'    as const, icon: TriangleAlert, adminOnly: false },
+    { href: '/',              key: 'overview' as const, icon: Gauge,         adminOnly: false, maintenanceAllowed: true  },
+    { href: '/maquinas',      key: 'machines'  as const, icon: Cpu,          adminOnly: false, maintenanceAllowed: true  },
+    { href: '/trabalhadores', key: 'workers'   as const, icon: Users,        adminOnly: true,  maintenanceAllowed: false },
+    { href: '/previsao',      key: 'forecast'  as const, icon: BrainCircuit, adminOnly: false, maintenanceAllowed: false, badge: 'LSTM' },
+    { href: '/alertas',       key: 'alerts'    as const, icon: TriangleAlert, adminOnly: false, maintenanceAllowed: true  },
 ];
 
 export default function Sidebar() {
@@ -21,8 +21,13 @@ export default function Sidebar() {
     const { user, logout, isAdmin } = useAuth();
     const { t } = useLang();
 
+    const isMaintenance = user?.department === 'Manutenção';
     const errorCount = machines.filter((m) => m.status === 'Error').length;
-    const links = NAV_ITEMS.filter((l) => !l.adminOnly || isAdmin);
+    const links = NAV_ITEMS.filter((l) => {
+        if (l.adminOnly && !isAdmin) return false;
+        if (isMaintenance && !l.maintenanceAllowed) return false;
+        return true;
+    });
     const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : '??';
 
     return (
@@ -104,7 +109,9 @@ export default function Sidebar() {
                     </div>
                     <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{user?.username}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 capitalize">{user?.role}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 capitalize">
+                            {user?.department ? user.department : user?.role}
+                        </p>
                     </div>
                     <button
                         onClick={logout}
